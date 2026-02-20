@@ -1,180 +1,102 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# docker-run.sh — Launch MediaRenamer GUI from Docker on Linux, macOS, Windows
+# docker-run.sh — Build and launch MediaRenamer (browser GUI via noVNC)
 #
 # Usage:
-#   ./docker-run.sh                        # GUI (default)
-#   ./docker-run.sh cli --help             # CLI mode
-#   ./docker-run.sh cli rename /media/...  # CLI rename
+#   ./docker-run.sh                        # build if needed + launch GUI
+#   ./docker-run.sh build                  # force rebuild
+#   ./docker-run.sh cli --help             # CLI mode (no display needed)
 #   MEDIA_DIR=/srv/movies ./docker-run.sh  # custom media directory
+#   TMDB_API_KEY=xxx ./docker-run.sh       # pass key as env var
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 IMAGE="mediarenamer:latest"
-CONTAINER_NAME="mediarenamer"
+CONTAINER="mediarenamer"
 SETTINGS_DIR="${HOME}/.mediarenamer"
 MEDIA_DIR="${MEDIA_DIR:-${HOME}/Media}"
+NOVNC_PORT="${NOVNC_PORT:-6080}"
 
-# ── Colour helpers ────────────────────────────────────────────────────────────
-RED='\033[0;31m'; YELLOW='\033[0;33m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
+CYAN='\033[0;36m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; NC='\033[0m'
 info()  { echo -e "${CYAN}[mediarenamer]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[warning]${NC} $*"; }
-error() { echo -e "${RED}[error]${NC} $*"; exit 1; }
 ok()    { echo -e "${GREEN}[ok]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[warn]${NC} $*"; }
+error() { echo -e "${RED}[error]${NC} $*"; exit 1; }
 
-# ── Detect OS ─────────────────────────────────────────────────────────────────
-OS="unknown"
-case "$(uname -s)" in
-  Linux*)  OS="linux"  ;;
-  Darwin*) OS="macos"  ;;
-  MINGW*|MSYS*|CYGWIN*) OS="windows" ;;
-esac
-info "Host OS: ${OS}"
-
-# ── Check Docker is running ───────────────────────────────────────────────────
+# Check Docker
 if ! docker info &>/dev/null; then
-  error "Docker daemon is not running. Start Docker and try again."
+    error "Docker is not running. Start Docker Desktop and try again."
 fi
 
-# ── Build image if it doesn't exist ──────────────────────────────────────────
-if ! docker image inspect "${IMAGE}" &>/dev/null; then
-  info "Image '${IMAGE}' not found — building now (this takes ~2 minutes the first time)…"
-  docker build -t "${IMAGE}" "$(dirname "$0")"
-  ok "Image built."
+# Force rebuild
+if [[ "${1:-}" == "build" ]]; then
+    info "Building image..."
+    docker build --no-cache -t "${IMAGE}" "$(dirname "$0")"
+    ok "Image built."; exit 0
 fi
 
-# ── Persistent settings directory ─────────────────────────────────────────────
-mkdir -p "${SETTINGS_DIR}"
-info "Settings dir: ${SETTINGS_DIR}"
-
-# ── Media directory ───────────────────────────────────────────────────────────
-if [ ! -d "${MEDIA_DIR}" ]; then
-  warn "MEDIA_DIR '${MEDIA_DIR}' does not exist — creating it."
-  mkdir -p "${MEDIA_DIR}"
-fi
-info "Media dir: ${MEDIA_DIR}"
-
-# ── Remove any stopped container with the same name ──────────────────────────
-if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-  docker rm -f "${CONTAINER_NAME}" &>/dev/null || true
-fi
-
-# ── Common docker run flags ───────────────────────────────────────────────────
-DOCKER_ARGS=(
-  --rm
-  --name "${CONTAINER_NAME}"
-  -v "${SETTINGS_DIR}:/root/.mediarenamer"
-  -v "${MEDIA_DIR}:/media"
-  -e TMDB_API_KEY="${TMDB_API_KEY:-}"
-  -e TVDB_API_KEY="${TVDB_API_KEY:-}"
-  -e OPENSUBTITLES_API_KEY="${OPENSUBTITLES_API_KEY:-}"
-  --ipc host
-)
-
-# ── CLI mode: pass args straight through ─────────────────────────────────────
+# CLI passthrough
 if [[ "${1:-}" == "cli" ]]; then
-  shift
-  info "Running CLI: python3 cli.py $*"
-  exec docker run -it "${DOCKER_ARGS[@]}" "${IMAGE}" python3 cli.py "$@"
+    shift
+    docker run --rm -it \
+        -e TMDB_API_KEY="${TMDB_API_KEY:-}" \
+        -v "${SETTINGS_DIR}:/root/.mediarenamer" \
+        -v "${MEDIA_DIR}:/media" \
+        "${IMAGE}" cli "$@"
+    exit 0
 fi
 
-# ── GUI mode: set up X11 forwarding per OS ───────────────────────────────────
-case "${OS}" in
+# Build image if not present
+if ! docker image inspect "${IMAGE}" &>/dev/null; then
+    info "Building image (first run, ~3 minutes)..."
+    docker build -t "${IMAGE}" "$(dirname "$0")"
+    ok "Image built."
+fi
 
-  # ────────────────────────────────────────────────────────────────────────────
-  linux)
-    # Validate DISPLAY is set
-    if [ -z "${DISPLAY:-}" ]; then
-      error "DISPLAY is not set. Are you running in a desktop session?"
+# Remove stale container
+docker rm -f "${CONTAINER}" &>/dev/null || true
+
+mkdir -p "${SETTINGS_DIR}"
+mkdir -p "${MEDIA_DIR}"
+
+info "Starting MediaRenamer..."
+docker run -d \
+    --name "${CONTAINER}" \
+    --rm \
+    -p "${NOVNC_PORT}:6080" \
+    -e TMDB_API_KEY="${TMDB_API_KEY:-}" \
+    -e TVDB_API_KEY="${TVDB_API_KEY:-}" \
+    -e OPENSUBTITLES_API_KEY="${OPENSUBTITLES_API_KEY:-}" \
+    -e XVFB_RESOLUTION="${XVFB_RESOLUTION:-1280x800x24}" \
+    -v "${SETTINGS_DIR}:/root/.mediarenamer" \
+    -v "${MEDIA_DIR}:/media" \
+    --shm-size=256m \
+    "${IMAGE}"
+
+# Wait for noVNC to be ready
+info "Waiting for noVNC to start..."
+for i in $(seq 1 20); do
+    if docker exec "${CONTAINER}" sh -c "ls /tmp/novnc.log 2>/dev/null && grep -q 'handler' /tmp/novnc.log 2>/dev/null || pgrep websockify" &>/dev/null 2>&1; then
+        break
     fi
+    sleep 0.5
+done
+sleep 1
 
-    # Grant the container permission to open windows
-    if command -v xhost &>/dev/null; then
-      xhost +local:docker &>/dev/null && ok "xhost: granted access to local:docker"
-    else
-      warn "xhost not found — if the window fails to open, install x11-xserver-utils"
-    fi
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  MediaRenamer is running!${NC}"
+echo ""
+echo -e "  Browser GUI:  ${CYAN}http://localhost:${NOVNC_PORT}/vnc.html${NC}"
+echo -e "  Media files:  ${MEDIA_DIR} → /media inside container"
+echo ""
+echo -e "  To stop:      ${YELLOW}docker stop ${CONTAINER}${NC}"
+echo -e "  To view logs: ${YELLOW}docker logs ${CONTAINER}${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-    DOCKER_ARGS+=(
-      -e DISPLAY="${DISPLAY}"
-      -v /tmp/.X11-unix:/tmp/.X11-unix:ro
-    )
-
-    info "Launching GUI (Linux/X11)…"
-    docker run -it "${DOCKER_ARGS[@]}" "${IMAGE}"
-
-    # Revoke xhost access when done
-    if command -v xhost &>/dev/null; then
-      xhost -local:docker &>/dev/null || true
-    fi
-    ;;
-
-  # ────────────────────────────────────────────────────────────────────────────
-  macos)
-    # Requires XQuartz — https://www.xquartz.org/
-    if ! command -v xquartz &>/dev/null && ! [ -d /Applications/Utilities/XQuartz.app ]; then
-      error "XQuartz is not installed.\nInstall it from https://www.xquartz.org/ then re-run this script."
-    fi
-
-    # Make sure XQuartz is running
-    if ! pgrep -x Xquartz &>/dev/null && ! pgrep -f "X11.bin" &>/dev/null; then
-      info "Starting XQuartz…"
-      open -a XQuartz
-      sleep 3  # give it time to initialise
-    fi
-
-    # Allow connections from localhost
-    if command -v xhost &>/dev/null; then
-      xhost +localhost &>/dev/null && ok "xhost: granted localhost access"
-    fi
-
-    # Get the host's IP on the loopback interface that the container can reach
-    HOST_IP=$(ifconfig lo0 | grep 'inet ' | awk '{print $2}')
-    if [ -z "${HOST_IP}" ]; then
-      HOST_IP="host.docker.internal"  # Docker Desktop fallback
-    fi
-
-    DOCKER_ARGS+=(
-      -e DISPLAY="${HOST_IP}:0"
-    )
-
-    info "Launching GUI (macOS → XQuartz at ${HOST_IP}:0)…"
-    echo ""
-    echo "  Tip: In XQuartz Preferences → Security, enable"
-    echo "       'Allow connections from network clients'"
-    echo "  Then restart XQuartz and re-run this script."
-    echo ""
-    docker run -it "${DOCKER_ARGS[@]}" "${IMAGE}"
-    ;;
-
-  # ────────────────────────────────────────────────────────────────────────────
-  windows)
-    # Option A: WSL2 with WSLg (Windows 11 / recent Win10) — DISPLAY is set automatically
-    # Option B: VcXsrv / Xming on the host — user must set DISPLAY manually
-
-    DISPLAY_VAR="${DISPLAY:-}"
-
-    if [ -z "${DISPLAY_VAR}" ]; then
-      # Try to auto-detect the Windows host IP for VcXsrv
-      DISPLAY_VAR="$(grep -m1 nameserver /etc/resolv.conf | awk '{print $2}'):0.0"
-      warn "DISPLAY not set — guessing ${DISPLAY_VAR} (VcXsrv/Xming default)."
-      warn "If the window doesn't appear:"
-      warn "  1. Install VcXsrv from https://sourceforge.net/projects/vcxsrv/"
-      warn "  2. Launch XLaunch with 'Disable access control' checked"
-      warn "  3. Set DISPLAY=<your-host-ip>:0.0 then re-run this script"
-    else
-      ok "Using DISPLAY=${DISPLAY_VAR}"
-    fi
-
-    DOCKER_ARGS+=(
-      -e DISPLAY="${DISPLAY_VAR}"
-    )
-
-    info "Launching GUI (Windows → VcXsrv/WSLg at ${DISPLAY_VAR})…"
-    docker run -it "${DOCKER_ARGS[@]}" "${IMAGE}"
-    ;;
-
-  *)
-    error "Unsupported OS: $(uname -s). Run the container manually and set DISPLAY."
-    ;;
+# Try to open the browser automatically
+URL="http://localhost:${NOVNC_PORT}/vnc.html"
+case "$(uname -s)" in
+    Darwin) sleep 1 && open "$URL" & ;;
+    Linux)  sleep 1 && (xdg-open "$URL" &>/dev/null &) & ;;
 esac

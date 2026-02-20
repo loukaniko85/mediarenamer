@@ -14,15 +14,16 @@ from PyQt6.QtWidgets import (
     QPushButton, QListWidget, QListWidgetItem, QLabel, QFileDialog,
     QMessageBox, QProgressBar, QComboBox, QLineEdit, QTextEdit,
     QCheckBox, QDialog, QInputDialog, QFrame, QSizePolicy,
-    QAbstractItemView, QStackedWidget,
+    QAbstractItemView, QStackedWidget, QMenu, QRadioButton,
+    QButtonGroup, QToolButton,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import (
     QDragEnterEvent, QDropEvent, QColor, QPalette, QFont,
-    QPainter, QBrush,
+    QPainter, QBrush, QAction,
 )
 
-# ── Settings ──────────────────────────────────────────────────────────────────
+# ── Settings persistence ──────────────────────────────────────────────────────
 SETTINGS_PATH = Path.home() / ".mediarenamer" / "settings.json"
 
 def load_settings() -> dict:
@@ -37,7 +38,6 @@ def save_settings(data: dict):
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     SETTINGS_PATH.write_text(json.dumps(data, indent=2))
 
-# Inject saved keys before importing core
 _s = load_settings()
 for _env, _key in [("TMDB_API_KEY","tmdb_api_key"),("TVDB_API_KEY","tvdb_api_key"),("OPENSUBTITLES_API_KEY","opensubtitles_api_key")]:
     if _s.get(_key):
@@ -61,7 +61,7 @@ except ImportError:
     from core.artwork import ArtworkDownloader
     from core.metadata_writer import MetadataWriter
 
-# ── Palette constants ─────────────────────────────────────────────────────────
+# ── Palette ───────────────────────────────────────────────────────────────────
 C_BG        = "#0A0C12"
 C_SURFACE   = "#11141D"
 C_PANEL     = "#161923"
@@ -75,37 +75,97 @@ C_TEXT_DIM  = "#6B7280"
 C_TEXT_MID  = "#9CA3AF"
 C_SUCCESS   = "#10B981"
 C_ERROR     = "#EF4444"
+C_BLUE      = "#3B82F6"
+C_BLUE_DIM  = "#1D4ED8"
+C_GREEN     = "#22C55E"
+C_GREEN_DIM = "#15803D"
 
 STYLESHEET = """
-QMainWindow, QWidget { background: #0A0C12; color: #E8EAF0; font-family: "Segoe UI","SF Pro Display","Helvetica Neue",sans-serif; font-size: 13px; }
-QPushButton { background: #11141D; color: #9CA3AF; border: 1px solid #252A38; border-radius: 6px; padding: 7px 16px; font-size: 12px; font-weight: 500; }
+QMainWindow, QWidget { background: #0A0C12; color: #E8EAF0;
+    font-family: "Segoe UI","SF Pro Display","Helvetica Neue",sans-serif; font-size: 13px; }
+
+/* ── Base button ── */
+QPushButton { background: #11141D; color: #9CA3AF; border: 1px solid #252A38;
+    border-radius: 6px; padding: 7px 16px; font-size: 12px; font-weight: 500; }
 QPushButton:hover { background: #161923; color: #E8EAF0; border-color: #92600A; }
 QPushButton:pressed { background: #0A0C12; }
 QPushButton:disabled { color: #252A38; border-color: #1E2330; }
-QPushButton#primary { background: #F59E0B; color: #0A0A0A; border: none; font-weight: 700; font-size: 13px; padding: 9px 24px; border-radius: 7px; letter-spacing: 0.3px; }
-QPushButton#primary:hover { background: #FCD34D; }
-QPushButton#primary:pressed { background: #92600A; }
-QPushButton#primary:disabled { background: #3A2E0A; color: #5A4A1A; }
-QPushButton#ghost { background: transparent; color: #6B7280; border: 1px solid #1E2330; border-radius: 6px; padding: 6px 14px; font-size: 12px; }
+
+/* ── Match button — vivid blue ── */
+QPushButton#match {
+    background: #3B82F6; color: #FFFFFF; border: none;
+    font-weight: 700; font-size: 13px; padding: 9px 24px;
+    border-radius: 7px; letter-spacing: 0.3px; }
+QPushButton#match:hover { background: #60A5FA; }
+QPushButton#match:pressed { background: #1D4ED8; }
+QPushButton#match:disabled { background: #1e3a5f; color: #3a5a8a; }
+
+/* ── Rename button — vivid green ── */
+QPushButton#rename {
+    background: #22C55E; color: #FFFFFF; border: none;
+    font-weight: 700; font-size: 13px; padding: 9px 24px;
+    border-radius: 7px; letter-spacing: 0.3px; }
+QPushButton#rename:hover { background: #4ADE80; }
+QPushButton#rename:pressed { background: #15803D; }
+QPushButton#rename:disabled { background: #14532d; color: #166534; }
+
+/* ── Ghost button ── */
+QPushButton#ghost { background: transparent; color: #6B7280; border: 1px solid #1E2330;
+    border-radius: 6px; padding: 6px 14px; font-size: 12px; }
 QPushButton#ghost:hover { color: #F59E0B; border-color: #92600A; background: rgba(245,158,11,0.06); }
-QPushButton#danger { background: transparent; color: #EF4444; border: 1px solid rgba(239,68,68,0.3); border-radius: 6px; padding: 6px 14px; }
+
+/* ── Danger button ── */
+QPushButton#danger { background: transparent; color: #EF4444;
+    border: 1px solid rgba(239,68,68,0.3); border-radius: 6px; padding: 6px 14px; }
 QPushButton#danger:hover { background: rgba(239,68,68,0.1); border-color: #EF4444; }
-QPushButton#icon_btn { background: transparent; border: none; color: #6B7280; padding: 4px 8px; border-radius: 4px; font-size: 14px; }
+
+/* ── Icon button ── */
+QPushButton#icon_btn { background: transparent; border: none; color: #6B7280;
+    padding: 4px 8px; border-radius: 4px; font-size: 14px; }
 QPushButton#icon_btn:hover { color: #F59E0B; background: rgba(245,158,11,0.08); }
-QLineEdit { background: #11141D; color: #E8EAF0; border: 1px solid #252A38; border-radius: 6px; padding: 7px 10px; selection-background-color: #92600A; }
+
+/* ── Dry-run button ── */
+QPushButton#dryrun { background: rgba(245,158,11,0.1); color: #F59E0B;
+    border: 1px solid #92600A; border-radius: 6px; padding: 7px 16px; font-size: 12px; font-weight: 600; }
+QPushButton#dryrun:hover { background: rgba(245,158,11,0.18); }
+QPushButton#dryrun:disabled { color: #92600A; background: rgba(245,158,11,0.04); }
+
+/* ── Inputs ── */
+QLineEdit { background: #11141D; color: #E8EAF0; border: 1px solid #252A38;
+    border-radius: 6px; padding: 7px 10px; selection-background-color: #92600A; }
 QLineEdit:focus { border-color: #F59E0B; background: #161923; }
 QLineEdit:disabled { color: #6B7280; background: #0A0C12; }
-QComboBox { background: #11141D; color: #E8EAF0; border: 1px solid #252A38; border-radius: 6px; padding: 6px 10px; min-width: 130px; }
+QLineEdit#search { padding-left: 28px; }
+
+QComboBox { background: #11141D; color: #E8EAF0; border: 1px solid #252A38;
+    border-radius: 6px; padding: 6px 10px; min-width: 130px; }
 QComboBox:hover { border-color: #92600A; }
 QComboBox::drop-down { border: none; width: 24px; }
-QComboBox::down-arrow { border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #6B7280; margin-right: 6px; }
-QComboBox QAbstractItemView { background: #161923; color: #E8EAF0; border: 1px solid #252A38; selection-background-color: #92600A; outline: none; }
-QListWidget { background: #11141D; color: #E8EAF0; border: 1px solid #252A38; border-radius: 8px; padding: 4px; outline: none; }
-QListWidget::item { padding: 8px 12px; border-radius: 5px; color: #9CA3AF; margin: 1px 2px; }
+QComboBox::down-arrow { border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-top: 5px solid #6B7280; margin-right: 6px; }
+QComboBox QAbstractItemView { background: #161923; color: #E8EAF0;
+    border: 1px solid #252A38; selection-background-color: #92600A; outline: none; }
+
+/* ── Radio buttons ── */
+QRadioButton { color: #9CA3AF; spacing: 6px; }
+QRadioButton::indicator { width: 14px; height: 14px; border-radius: 7px;
+    border: 1px solid #252A38; background: #11141D; }
+QRadioButton::indicator:checked { background: #F59E0B; border-color: #F59E0B; }
+QRadioButton:hover { color: #E8EAF0; }
+
+/* ── Lists ── */
+QListWidget { background: #11141D; color: #E8EAF0; border: 1px solid #252A38;
+    border-radius: 8px; padding: 4px; outline: none; }
+QListWidget::item { padding: 6px 10px; border-radius: 5px; color: #9CA3AF; margin: 1px 2px; }
 QListWidget::item:selected { background: rgba(245,158,11,0.12); color: #E8EAF0; }
 QListWidget::item:hover:!selected { background: rgba(255,255,255,0.03); color: #E8EAF0; }
+
+/* ── Progress ── */
 QProgressBar { background: #11141D; border: none; border-radius: 4px; height: 6px; color: transparent; }
-QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #92600A, stop:1 #FCD34D); border-radius: 4px; }
+QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+    stop:0 #92600A, stop:1 #FCD34D); border-radius: 4px; }
+
+/* ── Scrollbars ── */
 QScrollBar:vertical { background: transparent; width: 8px; }
 QScrollBar::handle:vertical { background: #252A38; border-radius: 4px; min-height: 32px; }
 QScrollBar::handle:vertical:hover { background: #92600A; }
@@ -113,18 +173,37 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar:horizontal { background: transparent; height: 8px; }
 QScrollBar::handle:horizontal { background: #252A38; border-radius: 4px; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
-QTextEdit { background: #0A0C12; color: #6B7280; border: 1px solid #1E2330; border-radius: 6px; padding: 8px; font-family: "JetBrains Mono","Fira Code","Consolas",monospace; font-size: 11px; selection-background-color: #92600A; }
+
+/* ── Log / text area ── */
+QTextEdit { background: #0A0C12; color: #6B7280; border: 1px solid #1E2330;
+    border-radius: 6px; padding: 8px;
+    font-family: "JetBrains Mono","Fira Code","Consolas",monospace; font-size: 11px;
+    selection-background-color: #92600A; }
+
+/* ── Checkboxes ── */
 QCheckBox { color: #9CA3AF; spacing: 8px; }
-QCheckBox::indicator { width: 16px; height: 16px; border-radius: 4px; border: 1px solid #252A38; background: #11141D; }
+QCheckBox::indicator { width: 16px; height: 16px; border-radius: 4px;
+    border: 1px solid #252A38; background: #11141D; }
 QCheckBox::indicator:checked { background: #F59E0B; border-color: #F59E0B; }
 QCheckBox::indicator:hover { border-color: #92600A; }
 QCheckBox:hover { color: #E8EAF0; }
+
+/* ── Misc ── */
 QFrame[frameShape="4"], QFrame[frameShape="5"] { color: #252A38; }
 QSplitter::handle { background: #252A38; width: 1px; }
-QToolTip { background: #161923; color: #E8EAF0; border: 1px solid #92600A; border-radius: 4px; padding: 4px 8px; font-size: 12px; }
+QToolTip { background: #161923; color: #E8EAF0; border: 1px solid #92600A;
+    border-radius: 4px; padding: 4px 8px; font-size: 12px; }
 QDialog { background: #161923; }
+QMenu { background: #161923; color: #E8EAF0; border: 1px solid #252A38;
+    border-radius: 6px; padding: 4px; }
+QMenu::item { padding: 6px 18px; border-radius: 4px; }
+QMenu::item:selected { background: rgba(245,158,11,0.12); color: #E8EAF0; }
+QMenu::separator { height: 1px; background: #252A38; margin: 4px 8px; }
 QLabel#section_title { color: #6B7280; font-size: 10px; font-weight: 600; letter-spacing: 1.2px; }
 QLabel#dimmed { color: #6B7280; font-size: 12px; }
+QLabel#stat_ok  { color: #22C55E; font-size: 11px; font-weight: 600; }
+QLabel#stat_err { color: #EF4444; font-size: 11px; font-weight: 600; }
+QLabel#stat_dim { color: #6B7280; font-size: 11px; }
 """
 
 # ── Workers ───────────────────────────────────────────────────────────────────
@@ -134,7 +213,7 @@ class MatchWorker(QThread):
     matched    = pyqtSignal(int, object, str)
     status     = pyqtSignal(str)
     finished   = pyqtSignal(int, int)
-    hard_error = pyqtSignal(str)  # first unrecoverable error (bad key, no network)
+    hard_error = pyqtSignal(str)
 
     def __init__(self, files, data_source, naming_scheme, matcher, renamer):
         super().__init__()
@@ -165,44 +244,93 @@ class MatchWorker(QThread):
             self.progress.emit(int((i+1)/total*100))
         self.finished.emit(matched_count, total)
 
+
 class RenameWorker(QThread):
     progress           = pyqtSignal(int)
     status             = pyqtSignal(str)
     finished           = pyqtSignal(bool, str)
     operation_complete = pyqtSignal(str, str, dict)
 
-    def __init__(self, files, matches, output_dir, naming_scheme, download_artwork=False, write_metadata=False):
+    def __init__(self, files, matches, output_dir, naming_scheme,
+                 download_artwork=False, write_metadata=False,
+                 dry_run=False, copy_mode=False):
         super().__init__()
         self.files=files; self.matches=matches; self.output_dir=output_dir
-        self.naming_scheme=naming_scheme; self.download_artwork=download_artwork; self.write_metadata=write_metadata
+        self.naming_scheme=naming_scheme; self.download_artwork=download_artwork
+        self.write_metadata=write_metadata; self.dry_run=dry_run; self.copy_mode=copy_mode
 
     def run(self):
         try:
-            renamer = FileRenamer(self.naming_scheme)
-            artwork_dl = ArtworkDownloader() if self.download_artwork else None
-            meta_wr    = MetadataWriter()    if self.write_metadata   else None
-            total = len(self.files); renamed = 0
-            for i,(fp,mi) in enumerate(zip(self.files,self.matches)):
-                if not mi: self.progress.emit(int((i+1)/total*100)); continue
-                self.status.emit(f"Renaming  {os.path.basename(fp)}")
-                new_path = renamer.rename_file(fp, mi, self.output_dir)
-                if new_path:
+            renamer     = FileRenamer(self.naming_scheme)
+            artwork_dl  = ArtworkDownloader() if self.download_artwork else None
+            meta_wr     = MetadataWriter()    if self.write_metadata   else None
+            total       = len(self.files)
+            renamed     = 0
+            skipped     = 0
+            conflicts   = 0
+
+            mode_label = "DRY RUN" if self.dry_run else ("COPY" if self.copy_mode else "MOVE")
+
+            for i, (fp, mi) in enumerate(zip(self.files, self.matches)):
+                if not mi:
+                    self.progress.emit(int((i+1)/total*100))
+                    continue
+
+                new_name  = renamer.generate_new_name(fp, mi, self.naming_scheme)
+                dest_base = Path(self.output_dir) if self.output_dir else Path(fp).parent
+                dest      = dest_base / new_name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+
+                if dest.exists() and dest != Path(fp):
+                    conflicts += 1
+                    self.status.emit(f"\u26a0  [{mode_label}] Conflict — destination exists: {dest.name}")
+                    self.progress.emit(int((i+1)/total*100))
+                    continue
+
+                if self.dry_run:
+                    self.status.emit(f"\u25b6  [DRY RUN] {os.path.basename(fp)} \u2192 {dest.name}")
                     renamed += 1
+                    self.progress.emit(int((i+1)/total*100))
+                    continue
+
+                try:
+                    if self.copy_mode:
+                        shutil.copy2(fp, str(dest))
+                    else:
+                        shutil.move(fp, str(dest))
+
+                    renamed += 1
+                    self.status.emit(f"\u2713  [{mode_label}] {os.path.basename(fp)} \u2192 {dest.name}")
+
                     if artwork_dl:
-                        p = artwork_dl.download_poster(mi, os.path.dirname(new_path))
-                        if p: self.status.emit(f"  Poster: {os.path.basename(p)}")
+                        p = artwork_dl.download_poster(mi, str(dest.parent))
+                        if p: self.status.emit(f"   \U0001f5bc  Poster: {os.path.basename(p)}")
+
                     if meta_wr:
                         poster = None
                         if artwork_dl:
-                            c = os.path.join(os.path.dirname(new_path), f"{mi.get('title','Unknown')}_poster.jpg")
-                            poster = c if os.path.exists(c) else None
-                        if meta_wr.write_metadata(new_path, mi, poster):
-                            self.status.emit(f"  Metadata: {os.path.basename(new_path)}")
-                    self.operation_complete.emit(fp, new_path, mi)
+                            c = dest.parent / f"{mi.get('title','Unknown')}_poster.jpg"
+                            poster = str(c) if c.exists() else None
+                        if meta_wr.write_metadata(str(dest), mi, poster):
+                            self.status.emit(f"   \U0001f3f7  Metadata written")
+
+                    self.operation_complete.emit(fp, str(dest), mi)
+
+                except Exception as e:
+                    skipped += 1
+                    self.status.emit(f"\u2717  Failed: {os.path.basename(fp)} — {e}")
+
                 self.progress.emit(int((i+1)/total*100))
-            self.finished.emit(True, f"Done \u2014 {renamed} of {total} file(s) renamed.")
+
+            parts = [f"{renamed} renamed"]
+            if conflicts: parts.append(f"{conflicts} conflict(s) skipped")
+            if skipped:   parts.append(f"{skipped} error(s)")
+            suffix = " (dry run — no files changed)" if self.dry_run else ""
+            self.finished.emit(True, "Done — " + ", ".join(parts) + suffix)
+
         except Exception as e:
             self.finished.emit(False, f"Error: {e}")
+
 
 # ── Settings dialog ───────────────────────────────────────────────────────────
 
@@ -219,65 +347,64 @@ class SettingsDialog(QDialog):
         layout.setSpacing(20); layout.setContentsMargins(28,28,28,24)
 
         header = QLabel("API Keys  &  Settings")
-        header.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {C_TEXT}; letter-spacing:-0.5px;")
+        header.setStyleSheet(f"font-size: 18px; font-weight: 700; color: #E8EAF0; letter-spacing:-0.5px;")
         layout.addWidget(header)
 
         sub = QLabel("Keys are stored locally at  ~/.mediarenamer/settings.json  and are never transmitted to anyone except the respective APIs.")
         sub.setWordWrap(True)
-        sub.setStyleSheet(f"color: {C_TEXT_DIM}; font-size: 12px;")
+        sub.setStyleSheet(f"color: #6B7280; font-size: 12px;")
         layout.addWidget(sub)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color:{C_BORDER};")
+        sep.setStyleSheet(f"color: #252A38;")
         layout.addWidget(sep)
 
-        # Key rows
         grid = QVBoxLayout(); grid.setSpacing(16)
 
         def make_row(label, placeholder, link_url, link_label):
             box = QVBoxLayout(); box.setSpacing(5)
             top = QHBoxLayout()
             lbl = QLabel(label)
-            lbl.setStyleSheet(f"color:{C_TEXT_MID}; font-weight:600; font-size:12px; min-width:160px;")
+            lbl.setStyleSheet(f"color: #9CA3AF; font-weight:600; font-size:12px; min-width:160px;")
             top.addWidget(lbl)
             field = QLineEdit()
             field.setPlaceholderText(placeholder)
             field.setEchoMode(QLineEdit.EchoMode.Password)
             top.addWidget(field)
             box.addLayout(top)
-            hint = QLabel(f'<a href="{link_url}" style="color:{C_AMBER_DIM}; text-decoration:none; font-size:11px;">\u2197 {link_label}</a>')
+            hint = QLabel(f'<a href="{link_url}" style="color:#92600A; text-decoration:none; font-size:11px;">\u2197 {link_label}</a>')
             hint.setOpenExternalLinks(True)
-            hint.setContentsMargins(164, 0, 0, 0)
+            hint.setContentsMargins(164,0,0,0)
             box.addWidget(hint)
             container = QWidget(); container.setLayout(box)
             grid.addWidget(container)
             return field
 
-        self.tmdb_field = make_row("TMDB API Key *", "Paste v3 API key here…",
+        self.tmdb_field = make_row("TMDB API Key *", "Paste v3 API key here\u2026",
             "https://www.themoviedb.org/settings/api", "Get free key at themoviedb.org")
         self.tvdb_field = make_row("TVDB API Key", "Optional",
             "https://thetvdb.com/dashboard/account/apikey", "thetvdb.com")
-        self.osub_field = make_row("OpenSubtitles Key", "Optional — for subtitle fetching",
+        self.osub_field = make_row("OpenSubtitles Key", "Optional \u2014 for subtitle fetching",
             "https://www.opensubtitles.com/", "opensubtitles.com")
 
         layout.addLayout(grid)
 
         self.show_cb = QCheckBox("Show keys while editing")
-        self.show_cb.setStyleSheet(f"color:{C_TEXT_DIM}; font-size:12px;")
+        self.show_cb.setStyleSheet(f"color: #6B7280; font-size:12px;")
         self.show_cb.toggled.connect(self._toggle_echo)
         layout.addWidget(self.show_cb)
 
-        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine); sep2.setStyleSheet(f"color:{C_BORDER};")
+        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine); sep2.setStyleSheet(f"color: #252A38;")
         layout.addWidget(sep2)
 
         note = QLabel("* Required for file matching. The app will prompt you if this is missing.")
-        note.setStyleSheet(f"color:{C_TEXT_DIM}; font-size:11px;")
+        note.setStyleSheet(f"color: #6B7280; font-size:11px;")
         note.setWordWrap(True)
         layout.addWidget(note)
 
         btns = QHBoxLayout(); btns.addStretch()
         cancel = QPushButton("Cancel"); cancel.setObjectName("ghost"); cancel.clicked.connect(self.reject)
-        save   = QPushButton("Save Keys"); save.setObjectName("primary"); save.clicked.connect(self._save)
+        save = QPushButton("Save Keys"); save.setObjectName("match"); save.clicked.connect(self._save)
         btns.addWidget(cancel); btns.addWidget(save)
         layout.addLayout(btns)
 
@@ -301,6 +428,7 @@ class SettingsDialog(QDialog):
         if s["tvdb_api_key"]:          os.environ["TVDB_API_KEY"]          = s["tvdb_api_key"]
         if s["opensubtitles_api_key"]: os.environ["OPENSUBTITLES_API_KEY"] = s["opensubtitles_api_key"]
         self.accept()
+
 
 # ── Drop zone ─────────────────────────────────────────────────────────────────
 
@@ -331,19 +459,17 @@ class DropZone(QWidget):
         p.setPen(pen)
         p.setBrush(QBrush(QColor(C_AMBER + "18" if self._hover else C_SURFACE)))
         p.drawRoundedRect(self.rect().adjusted(8,8,-8,-8), 12, 12)
-
         p.setPen(QColor(C_AMBER if self._hover else C_TEXT_DIM))
         f = QFont(); f.setPointSize(26); p.setFont(f)
-        r = self.rect().adjusted(0,-36,0,-36)
-        p.drawText(r, Qtc.AlignmentFlag.AlignCenter, "\u2B07")
-
+        p.drawText(self.rect().adjusted(0,-36,0,-36), Qtc.AlignmentFlag.AlignCenter, "\u2B07")
         f2 = QFont(); f2.setPointSize(11); f2.setWeight(QFont.Weight.Medium); p.setFont(f2)
         p.setPen(QColor(C_TEXT if self._hover else C_TEXT_MID))
         p.drawText(self.rect().adjusted(0,20,0,20), Qtc.AlignmentFlag.AlignCenter, "Drop files or folders here")
-
         f3 = QFont(); f3.setPointSize(9); p.setFont(f3)
         p.setPen(QColor(C_TEXT_DIM))
-        p.drawText(self.rect().adjusted(0,52,0,52), Qtc.AlignmentFlag.AlignCenter, "mp4  \u00b7  mkv  \u00b7  avi  \u00b7  mov  \u00b7  m4v  \u00b7  wmv")
+        p.drawText(self.rect().adjusted(0,52,0,52), Qtc.AlignmentFlag.AlignCenter,
+                   "mp4  \u00b7  mkv  \u00b7  avi  \u00b7  mov  \u00b7  m4v  \u00b7  wmv")
+
 
 # ── Main window ───────────────────────────────────────────────────────────────
 
@@ -351,7 +477,7 @@ class MediaRenamerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("MediaRenamer")
-        self.setMinimumSize(1100, 720); self.resize(1280, 820)
+        self.setMinimumSize(1100, 720); self.resize(1320, 860)
         self.files=[]; self.matches=[]
         self.matcher=MediaMatcher(); self.renamer=FileRenamer()
         self.history=RenameHistory(); self.preset_manager=PresetManager()
@@ -365,6 +491,7 @@ class MediaRenamerApp(QMainWindow):
         vbox.addWidget(self._body(), stretch=1)
         vbox.addWidget(self._footer())
 
+    # ── Header ────────────────────────────────────────────────────
     def _header(self):
         bar = QWidget(); bar.setFixedHeight(58)
         bar.setStyleSheet(f"QWidget {{ background:{C_PANEL}; border-bottom:1px solid {C_BORDER}; }}")
@@ -373,16 +500,23 @@ class MediaRenamerApp(QMainWindow):
         dot = QLabel("\u25c6")
         dot.setStyleSheet(f"color:{C_AMBER}; font-size:16px; border:none;")
         h.addWidget(dot)
-
         title = QLabel("MediaRenamer")
         title.setStyleSheet(f"color:{C_TEXT}; font-size:16px; font-weight:700; letter-spacing:-0.5px; border:none;")
         h.addWidget(title)
-
-        badge = QLabel("v1.0")
+        badge = QLabel("v1.1")
         badge.setStyleSheet(f"color:{C_AMBER_DIM}; background:rgba(245,158,11,0.1); border:1px solid {C_AMBER_DIM}; border-radius:3px; padding:1px 5px; font-size:9px; font-weight:700; letter-spacing:1px;")
         h.addWidget(badge)
-
         h.addStretch()
+
+        # Stats bar
+        self.stat_matched = QLabel("—")
+        self.stat_matched.setObjectName("stat_dim")
+        self.stat_matched.setToolTip("Matched files")
+        h.addWidget(self.stat_matched)
+
+        sep0 = QFrame(); sep0.setFrameShape(QFrame.Shape.VLine)
+        sep0.setStyleSheet(f"color:{C_BORDER}; margin:14px 2px;")
+        h.addWidget(sep0)
 
         src_lbl = QLabel("Source")
         src_lbl.setStyleSheet(f"color:{C_TEXT_DIM}; font-size:11px; border:none;")
@@ -402,6 +536,7 @@ class MediaRenamerApp(QMainWindow):
         h.addWidget(settings_btn)
         return bar
 
+    # ── Body ──────────────────────────────────────────────────────
     def _body(self):
         body = QWidget(); body.setStyleSheet(f"background:{C_BG};")
         h = QHBoxLayout(body); h.setContentsMargins(0,0,0,0); h.setSpacing(0)
@@ -411,24 +546,44 @@ class MediaRenamerApp(QMainWindow):
         h.addWidget(self._right_panel(), stretch=6)
         return body
 
+    # ── Left panel ────────────────────────────────────────────────
     def _left_panel(self):
         panel = QWidget(); panel.setStyleSheet(f"background:{C_BG};")
-        v = QVBoxLayout(panel); v.setContentsMargins(18,18,18,14); v.setSpacing(10)
+        v = QVBoxLayout(panel); v.setContentsMargins(18,18,18,14); v.setSpacing(8)
 
         lbl = QLabel("INPUT FILES"); lbl.setObjectName("section_title"); v.addWidget(lbl)
 
+        # Toolbar
         tb = QHBoxLayout(); tb.setSpacing(6)
         self.add_files_btn  = QPushButton("+ Files")
         self.add_folder_btn = QPushButton("+ Folder")
-        self.clear_btn      = QPushButton("Clear"); self.clear_btn.setObjectName("danger")
-        for b in (self.add_files_btn, self.add_folder_btn, self.clear_btn): b.setFixedHeight(30)
+        self.remove_sel_btn = QPushButton("\u2212 Remove")
+        self.remove_sel_btn.setObjectName("danger")
+        self.clear_btn      = QPushButton("Clear All"); self.clear_btn.setObjectName("danger")
+        for b in (self.add_files_btn, self.add_folder_btn, self.remove_sel_btn, self.clear_btn):
+            b.setFixedHeight(30)
         self.add_files_btn.clicked.connect(self.add_files)
         self.add_folder_btn.clicked.connect(self.add_folder)
+        self.remove_sel_btn.clicked.connect(self.remove_selected)
         self.clear_btn.clicked.connect(self.clear_files)
         tb.addWidget(self.add_files_btn); tb.addWidget(self.add_folder_btn)
-        tb.addStretch(); tb.addWidget(self.clear_btn)
+        tb.addStretch()
+        tb.addWidget(self.remove_sel_btn)
+        tb.addWidget(self.clear_btn)
         v.addLayout(tb)
 
+        # Search filter
+        search_container = QWidget()
+        search_container.setStyleSheet("background:transparent;")
+        sl = QHBoxLayout(search_container); sl.setContentsMargins(0,0,0,0); sl.setSpacing(0)
+        self.filter_input = QLineEdit()
+        self.filter_input.setPlaceholderText("\U0001f50d  Filter files…")
+        self.filter_input.setObjectName("search")
+        self.filter_input.textChanged.connect(self._apply_filter)
+        sl.addWidget(self.filter_input)
+        v.addWidget(search_container)
+
+        # File list stack
         self.file_stack = QStackedWidget()
         self.drop_zone  = DropZone()
         self.drop_zone.files_dropped.connect(self.add_files_list)
@@ -436,6 +591,8 @@ class MediaRenamerApp(QMainWindow):
         self.original_list.setAcceptDrops(True)
         self.original_list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
         self.original_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.original_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.original_list.customContextMenuRequested.connect(self._file_context_menu)
         self.file_stack.addWidget(self.drop_zone)
         self.file_stack.addWidget(self.original_list)
         self.file_stack.setCurrentIndex(0)
@@ -446,15 +603,18 @@ class MediaRenamerApp(QMainWindow):
         self.file_count_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(self.file_count_lbl)
 
+        # Match button — BLUE
         self.match_btn = QPushButton("\u25c8  Match Files")
-        self.match_btn.setObjectName("primary"); self.match_btn.setFixedHeight(42)
+        self.match_btn.setObjectName("match")
+        self.match_btn.setFixedHeight(44)
         self.match_btn.clicked.connect(self.match_files)
         v.addWidget(self.match_btn)
         return panel
 
+    # ── Right panel ───────────────────────────────────────────────
     def _right_panel(self):
         panel = QWidget(); panel.setStyleSheet(f"background:{C_BG};")
-        v = QVBoxLayout(panel); v.setContentsMargins(18,18,18,14); v.setSpacing(10)
+        v = QVBoxLayout(panel); v.setContentsMargins(18,18,18,14); v.setSpacing(8)
 
         # Naming scheme
         sl = QLabel("NAMING SCHEME"); sl.setObjectName("section_title"); v.addWidget(sl)
@@ -464,13 +624,17 @@ class MediaRenamerApp(QMainWindow):
         self.preset_combo.setFixedWidth(160)
         self.preset_combo.currentTextChanged.connect(self.load_preset)
         self.naming_scheme_input = QLineEdit("{n}.{y}.{vf}.{vc}.{af}")
-        self.naming_scheme_input.setToolTip("{n} title  \u00b7  {y} year  \u00b7  {vf} resolution  \u00b7  {vc} video codec\n{af} audio format  \u00b7  {ac} audio channels\n{s} season  \u00b7  {e} episode  \u00b7  {s00e00} S01E01  \u00b7  {t} ep title")
+        self.naming_scheme_input.setToolTip(
+            "{n} title  \u00b7  {y} year  \u00b7  {vf} resolution  \u00b7  {vc} video codec\n"
+            "{af} audio format  \u00b7  {ac} audio channels\n"
+            "{s} season  \u00b7  {e} episode  \u00b7  {s00e00} S01E01  \u00b7  {t} ep title"
+        )
         sp = QPushButton("Save"); sp.setObjectName("ghost"); sp.setFixedWidth(56)
         sp.clicked.connect(self.save_current_preset)
         sr.addWidget(self.preset_combo); sr.addWidget(self.naming_scheme_input, stretch=1); sr.addWidget(sp)
         v.addLayout(sr)
 
-        legend = QLabel("{n} title  \u00b7  {y} year  \u00b7  {vf} resolution  \u00b7  {vc} video  \u00b7  {af} audio format  \u00b7  {ac} channels  \u00b7  {s}{e} season/ep  \u00b7  {t} ep title")
+        legend = QLabel("{n} title  \u00b7  {y} year  \u00b7  {vf} res  \u00b7  {vc} video  \u00b7  {af} audio  \u00b7  {ac} channels  \u00b7  {s}{e} season/ep  \u00b7  {t} ep title")
         legend.setStyleSheet(f"color:{C_TEXT_DIM}; font-size:10px;")
         legend.setWordWrap(True); v.addWidget(legend)
 
@@ -479,22 +643,46 @@ class MediaRenamerApp(QMainWindow):
         or_ = QHBoxLayout(); or_.setSpacing(6)
         self.output_dir_input = QLineEdit()
         self.output_dir_input.setPlaceholderText("Leave empty to rename files in place")
-        self.browse_output_btn = QPushButton("Browse\u2026"); self.browse_output_btn.setObjectName("ghost")
-        self.browse_output_btn.setFixedWidth(80); self.browse_output_btn.clicked.connect(self.browse_output_dir)
-        or_.addWidget(self.output_dir_input); or_.addWidget(self.browse_output_btn)
+        browse_btn = QPushButton("Browse\u2026"); browse_btn.setObjectName("ghost")
+        browse_btn.setFixedWidth(80); browse_btn.clicked.connect(self.browse_output_dir)
+        or_.addWidget(self.output_dir_input); or_.addWidget(browse_btn)
         v.addLayout(or_)
 
-        # Options
+        # Options row
         optl = QLabel("OPTIONS"); optl.setObjectName("section_title"); v.addWidget(optl)
-        opt = QHBoxLayout(); opt.setSpacing(20)
+        opt = QHBoxLayout(); opt.setSpacing(16)
+
         self.download_artwork_check = QCheckBox("Download Artwork")
         self.download_artwork_check.setToolTip("Download poster images alongside renamed files")
         self.write_metadata_check   = QCheckBox("Write Metadata")
         self.write_metadata_check.setToolTip("Embed metadata tags into MP4 files")
-        opt.addWidget(self.download_artwork_check); opt.addWidget(self.write_metadata_check); opt.addStretch()
+        self.dry_run_check          = QCheckBox("Dry Run (preview only)")
+        self.dry_run_check.setToolTip("Show what WOULD be renamed without changing any files")
+        self.dry_run_check.setStyleSheet(f"color:{C_AMBER}; spacing:8px;")
+
+        opt.addWidget(self.download_artwork_check)
+        opt.addWidget(self.write_metadata_check)
+        opt.addWidget(self.dry_run_check)
+        opt.addStretch()
         v.addLayout(opt)
 
-        # Preview
+        # Copy vs Move
+        mode_row = QHBoxLayout(); mode_row.setSpacing(16)
+        mode_lbl = QLabel("File operation:")
+        mode_lbl.setStyleSheet(f"color:{C_TEXT_DIM}; font-size:11px;")
+        self.move_radio = QRadioButton("Move (rename in place)")
+        self.copy_radio = QRadioButton("Copy (keep originals)")
+        self.move_radio.setChecked(True)
+        self._mode_group = QButtonGroup(self)
+        self._mode_group.addButton(self.move_radio)
+        self._mode_group.addButton(self.copy_radio)
+        mode_row.addWidget(mode_lbl)
+        mode_row.addWidget(self.move_radio)
+        mode_row.addWidget(self.copy_radio)
+        mode_row.addStretch()
+        v.addLayout(mode_row)
+
+        # Preview list
         pr = QHBoxLayout()
         pvl = QLabel("RENAMED PREVIEW"); pvl.setObjectName("section_title"); pr.addWidget(pvl)
         pr.addStretch()
@@ -505,31 +693,43 @@ class MediaRenamerApp(QMainWindow):
         v.addLayout(pr)
 
         self.new_names_list = QListWidget()
+        self.new_names_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.new_names_list.customContextMenuRequested.connect(self._preview_context_menu)
         v.addWidget(self.new_names_list, stretch=1)
 
-        self.progress_bar = QProgressBar(); self.progress_bar.setVisible(False); self.progress_bar.setFixedHeight(6)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False); self.progress_bar.setFixedHeight(6)
         v.addWidget(self.progress_bar)
 
         # Actions
         ar = QHBoxLayout(); ar.setSpacing(8)
-        self.undo_btn = QPushButton("\u21a9 Undo"); self.undo_btn.setObjectName("ghost"); self.undo_btn.setFixedHeight(34)
+        self.undo_btn = QPushButton("\u21a9 Undo"); self.undo_btn.setObjectName("ghost"); self.undo_btn.setFixedHeight(36)
         self.undo_btn.clicked.connect(self.undo_rename); self.undo_btn.setEnabled(self.history.can_undo())
-        self.redo_btn = QPushButton("\u21aa Redo"); self.redo_btn.setObjectName("ghost"); self.redo_btn.setFixedHeight(34)
+        self.redo_btn = QPushButton("\u21aa Redo"); self.redo_btn.setObjectName("ghost"); self.redo_btn.setFixedHeight(36)
         self.redo_btn.clicked.connect(self.redo_rename); self.redo_btn.setEnabled(self.history.can_redo())
-        self.rename_btn = QPushButton("\u25b6  Rename Files"); self.rename_btn.setObjectName("primary")
-        self.rename_btn.setFixedHeight(42); self.rename_btn.setEnabled(False); self.rename_btn.clicked.connect(self.rename_files)
-        ar.addWidget(self.undo_btn); ar.addWidget(self.redo_btn); ar.addStretch(); ar.addWidget(self.rename_btn)
+
+        # Rename button — GREEN
+        self.rename_btn = QPushButton("\u25b6  Rename Files")
+        self.rename_btn.setObjectName("rename")
+        self.rename_btn.setFixedHeight(44)
+        self.rename_btn.setEnabled(False)
+        self.rename_btn.clicked.connect(self.rename_files)
+
+        ar.addWidget(self.undo_btn); ar.addWidget(self.redo_btn)
+        ar.addStretch()
+        ar.addWidget(self.rename_btn)
         v.addLayout(ar)
         return panel
 
+    # ── Footer ────────────────────────────────────────────────────
     def _footer(self):
-        foot = QWidget(); foot.setFixedHeight(130)
+        foot = QWidget(); foot.setFixedHeight(120)
         foot.setStyleSheet(f"QWidget {{ background:{C_BG}; border-top:1px solid {C_BORDER}; }}")
-        v = QVBoxLayout(foot); v.setContentsMargins(18,10,18,10); v.setSpacing(6)
+        v = QVBoxLayout(foot); v.setContentsMargins(18,8,18,8); v.setSpacing(4)
         row = QHBoxLayout()
         fl = QLabel("ACTIVITY LOG"); fl.setObjectName("section_title"); row.addWidget(fl)
         row.addStretch()
-        clr = QPushButton("Clear log"); clr.setObjectName("icon_btn"); clr.setFixedHeight(22)
+        clr = QPushButton("Clear"); clr.setObjectName("icon_btn"); clr.setFixedHeight(22)
         clr.clicked.connect(lambda: self.status_text.clear()); row.addWidget(clr)
         v.addLayout(row)
         self.status_text = QTextEdit(); self.status_text.setReadOnly(True); v.addWidget(self.status_text)
@@ -542,6 +742,98 @@ class MediaRenamerApp(QMainWindow):
         self.add_files_list([u.toLocalFile() for u in e.mimeData().urls()])
         e.acceptProposedAction()
 
+    # ── Context menus ─────────────────────────────────────────────
+    def _file_context_menu(self, pos):
+        item = self.original_list.itemAt(pos)
+        menu = QMenu(self)
+        if item:
+            open_act = QAction("\U0001f4c2  Open containing folder", self)
+            open_act.triggered.connect(lambda: self._open_folder(item))
+            menu.addAction(open_act)
+            menu.addSeparator()
+            rem_act = QAction("\u2212  Remove selected", self)
+            rem_act.triggered.connect(self.remove_selected)
+            menu.addAction(rem_act)
+        add_act = QAction("+  Add files\u2026", self)
+        add_act.triggered.connect(self.add_files)
+        menu.addAction(add_act)
+        folder_act = QAction("+  Add folder\u2026", self)
+        folder_act.triggered.connect(self.add_folder)
+        menu.addAction(folder_act)
+        menu.exec(self.original_list.mapToGlobal(pos))
+
+    def _preview_context_menu(self, pos):
+        idx = self.new_names_list.indexAt(pos).row()
+        if idx < 0 or idx >= len(self.files): return
+        menu = QMenu(self)
+        rematch_act = QAction("\U0001f50d  Search manually for this file", self)
+        rematch_act.triggered.connect(lambda: self._manual_search(idx))
+        menu.addAction(rematch_act)
+        clear_act = QAction("\u2715  Clear match for this file", self)
+        clear_act.triggered.connect(lambda: self._clear_match(idx))
+        menu.addAction(clear_act)
+        menu.exec(self.new_names_list.mapToGlobal(pos))
+
+    def _open_folder(self, item):
+        idx = self.original_list.row(item)
+        if 0 <= idx < len(self.files):
+            folder = str(Path(self.files[idx]).parent)
+            import subprocess, sys
+            if sys.platform == "darwin":
+                subprocess.run(["open", folder])
+            elif sys.platform == "win32":
+                subprocess.run(["explorer", folder])
+            else:
+                subprocess.run(["xdg-open", folder])
+
+    def _manual_search(self, idx):
+        """Let user type a manual search query for a specific file."""
+        fp = self.files[idx]
+        query, ok = QInputDialog.getText(
+            self, "Manual Search",
+            f"Search query for:\n{os.path.basename(fp)}\n\n"
+            "Enter title (and optionally year, e.g. 'Inception 2010'):"
+        )
+        if not ok or not query.strip(): return
+
+        # Simple search — strip year from end if provided
+        import re
+        parts = query.strip().rsplit(None, 1)
+        year = None
+        title = query.strip()
+        if len(parts) == 2 and re.match(r'^\d{4}$', parts[1]):
+            title = parts[0]; year = int(parts[1])
+
+        results = self.matcher.search_movies(title, year) or self.matcher.search_tv_shows(title)
+        if not results:
+            QMessageBox.information(self, "No Results", f"No results found for '{query}'.")
+            return
+
+        # Show picker
+        choices = [f"{r['title']} ({r.get('year','?')})  [{r['type']}]" for r in results]
+        choice, ok = QInputDialog.getItem(self, "Select Match", "Choose the correct match:", choices, 0, False)
+        if not ok: return
+
+        chosen = results[choices.index(choice)]
+        self.matches[idx] = chosen
+        new_name = self.renamer.generate_new_name(fp, chosen, self.naming_scheme_input.text())
+        item = self.new_names_list.item(idx)
+        item.setText(new_name)
+        item.setForeground(QColor(C_SUCCESS))
+        self._log(f"\u270f  Manual match: {os.path.basename(fp)} \u2192 {chosen['title']}")
+        matched = sum(1 for m in self.matches if m)
+        self.rename_btn.setEnabled(matched > 0)
+        self._update_stats()
+
+    def _clear_match(self, idx):
+        self.matches[idx] = None
+        item = self.new_names_list.item(idx)
+        item.setText(f"[cleared]  {os.path.basename(self.files[idx])}")
+        item.setForeground(QColor(C_TEXT_DIM))
+        matched = sum(1 for m in self.matches if m)
+        self.rename_btn.setEnabled(matched > 0)
+        self._update_stats()
+
     # ── File management ───────────────────────────────────────────
     def add_files(self):
         files, _ = QFileDialog.getOpenFileNames(self,"Select Media Files","",
@@ -553,7 +845,7 @@ class MediaRenamerApp(QMainWindow):
         if not folder: return
         exts = {'.mp4','.mkv','.avi','.mov','.m4v','.mpg','.mpeg','.flv','.wmv'}
         found = [str(p) for p in Path(folder).rglob("*") if p.suffix.lower() in exts]
-        if found: self.add_files_list(found)
+        if found: self.add_files_list(sorted(found))
         else: self._log("\u26a0  No media files found in selected folder.")
 
     def add_files_list(self, paths):
@@ -561,22 +853,42 @@ class MediaRenamerApp(QMainWindow):
         for path in paths:
             if os.path.isdir(path):
                 exts = {'.mp4','.mkv','.avi','.mov','.m4v','.mpg','.mpeg','.flv','.wmv'}
-                for p in Path(path).rglob("*"):
+                for p in sorted(Path(path).rglob("*")):
                     if p.suffix.lower() in exts and str(p) not in self.files:
                         self.files.append(str(p)); self._add_file_item(str(p)); added+=1
             elif path not in self.files:
                 self.files.append(path); self._add_file_item(path); added+=1
-        if added: self._log(f"+ Added {added} file(s)"); self._refresh_ui()
+        if added:
+            self.matches.extend([None]*added)
+            self._log(f"+ Added {added} file(s)"); self._refresh_ui()
 
     def _add_file_item(self, path):
         item = QListWidgetItem(os.path.basename(path))
         item.setToolTip(path); item.setForeground(QColor(C_TEXT_MID))
         self.original_list.addItem(item)
 
+    def remove_selected(self):
+        rows = sorted([self.original_list.row(i) for i in self.original_list.selectedItems()], reverse=True)
+        if not rows: return
+        for r in rows:
+            self.original_list.takeItem(r)
+            self.files.pop(r)
+            if r < len(self.matches): self.matches.pop(r)
+            if r < self.new_names_list.count(): self.new_names_list.takeItem(r)
+        self._log(f"\u2212  Removed {len(rows)} file(s)")
+        self._refresh_ui(); self._update_stats()
+
+    def _apply_filter(self, text):
+        text = text.lower()
+        for i in range(self.original_list.count()):
+            item = self.original_list.item(i)
+            item.setHidden(text not in item.text().lower())
+
     def _refresh_ui(self):
         n = len(self.files)
         self.file_count_lbl.setText(f"{n} file{'s' if n!=1 else ''} loaded")
         self.file_stack.setCurrentIndex(1 if n > 0 else 0)
+        if n == 0: self.stat_matched.setText("—"); self.stat_matched.setObjectName("stat_dim")
 
     def clear_files(self):
         self.files.clear(); self.matches.clear()
@@ -591,25 +903,43 @@ class MediaRenamerApp(QMainWindow):
     def _open_settings(self):
         dlg = SettingsDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            # Reinitialise matcher so it reads the freshly-saved env var.
-            # _read_tmdb_key() in matcher.py always reads os.environ at call-time,
-            # so a new MediaMatcher() picks up the key saved by SettingsDialog._save().
             self.matcher = MediaMatcher()
-            key_preview = (os.environ.get("TMDB_API_KEY","") or "")
-            if key_preview and key_preview not in ("YOUR_TMDB_API_KEY_HERE","YOUR_TMDB_API_KEY"):
-                self._log(f"\u2713  API key active: ...{key_preview[-6:]}")
+            key_preview = os.environ.get("TMDB_API_KEY","").strip()
+            _bad = {"","YOUR_TMDB_API_KEY_HERE","YOUR_TMDB_API_KEY"}
+            if key_preview and key_preview not in _bad:
+                self._log(f"\u2713  API key active: \u2026{key_preview[-6:]}")
             else:
-                self._log("\u26a0  No valid API key detected after save — check Settings.")
+                self._log("\u26a0  No valid TMDB API key — check Settings.")
+
+    def _update_stats(self):
+        total   = len(self.files)
+        matched = sum(1 for m in self.matches if m)
+        if total == 0:
+            self.stat_matched.setText("—")
+            self.stat_matched.setObjectName("stat_dim")
+        elif matched == total:
+            self.stat_matched.setText(f"\u2713 {matched}/{total} matched")
+            self.stat_matched.setObjectName("stat_ok")
+        elif matched > 0:
+            self.stat_matched.setText(f"{matched}/{total} matched")
+            self.stat_matched.setObjectName("stat_dim")
+        else:
+            self.stat_matched.setText(f"\u2717 0/{total} matched")
+            self.stat_matched.setObjectName("stat_err")
+        # Force style refresh
+        self.stat_matched.style().unpolish(self.stat_matched)
+        self.stat_matched.style().polish(self.stat_matched)
 
     # ── Matching ──────────────────────────────────────────────────
     def match_files(self):
         if not self.files:
             QMessageBox.warning(self,"No Files","Please add media files first."); return
-        _BAD_KEYS = {"", "YOUR_TMDB_API_KEY_HERE", "YOUR_TMDB_API_KEY"}
+        _BAD_KEYS = {"","YOUR_TMDB_API_KEY_HERE","YOUR_TMDB_API_KEY"}
         key = os.environ.get("TMDB_API_KEY","").strip()
         if key in _BAD_KEYS:
             reply = QMessageBox.warning(self,"TMDB API Key Missing",
-                "No TMDB API key found.\n\nGo to Settings \u2192 paste your key to enable matching.\nGet a free key at: https://www.themoviedb.org/settings/api\n\nOpen Settings now?",
+                "No TMDB API key found.\n\nGo to Settings \u2192 paste your key.\n"
+                "Get a free key at: https://www.themoviedb.org/settings/api\n\nOpen Settings now?",
                 QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes: self._open_settings()
             return
@@ -623,7 +953,8 @@ class MediaRenamerApp(QMainWindow):
             item = QListWidgetItem("\u2026"); item.setForeground(QColor(C_TEXT_DIM))
             self.new_names_list.addItem(item)
 
-        self.match_worker = MatchWorker(self.files, self.data_source_combo.currentText(),
+        self.match_worker = MatchWorker(
+            self.files, self.data_source_combo.currentText(),
             self.naming_scheme_input.text(), self.matcher, self.renamer)
         self.match_worker.progress.connect(self.progress_bar.setValue)
         self.match_worker.status.connect(self._log)
@@ -635,41 +966,39 @@ class MediaRenamerApp(QMainWindow):
     def _on_match_result(self, idx, mi, nn):
         self.matches[idx] = mi
         item = self.new_names_list.item(idx); item.setText(nn)
-        item.setForeground(QColor(C_TEXT if mi else (C_ERROR if "[error]" in nn else C_TEXT_DIM)))
+        if mi:
+            item.setForeground(QColor(C_TEXT))
+        elif "[error]" in nn:
+            item.setForeground(QColor(C_ERROR))
+        else:
+            item.setForeground(QColor(C_TEXT_DIM))
+        self._update_stats()
 
-    def _on_match_hard_error(self, error_msg: str):
-        """Called when the matcher raises an unrecoverable error (bad key, no network)."""
+    def _on_match_hard_error(self, error_msg):
         self.progress_bar.setVisible(False)
         self.match_btn.setEnabled(True)
-        # Stop the worker so we don't spam errors for every remaining file
-        if hasattr(self, 'match_worker'):
-            self.match_worker.quit()
-
+        if hasattr(self,'match_worker'): self.match_worker.quit()
         if "401" in error_msg or "Unauthorized" in error_msg or "invalid" in error_msg.lower():
-            reply = QMessageBox.critical(
-                self, "Invalid API Key",
+            reply = QMessageBox.critical(self,"Invalid API Key",
                 "TMDB rejected the API key (401 Unauthorized).\n\n"
-                "Please double-check your key in Settings — copy it directly\n"
-                "from https://www.themoviedb.org/settings/api\n\n"
+                "Copy your key directly from:\nhttps://www.themoviedb.org/settings/api\n\n"
                 "Open Settings now?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self._open_settings()
-        elif "Network error" in error_msg or "Connection" in error_msg:
-            QMessageBox.critical(
-                self, "Network Error",
+                QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.Yes: self._open_settings()
+        elif "Network" in error_msg or "Connection" in error_msg:
+            QMessageBox.critical(self,"Network Error",
                 f"Cannot reach TMDB:\n{error_msg}\n\n"
-                "If running in Docker, make sure the container has internet access.\n"
-                "Try: docker run --network=host ..."
-            )
+                "In Docker, ensure the container has internet:\n"
+                "  docker run --network=host ...")
         else:
-            QMessageBox.critical(self, "Match Error", error_msg)
+            QMessageBox.critical(self,"Match Error", error_msg)
 
     def _on_match_finished(self, matched, total):
-        self.progress_bar.setVisible(False); self.match_btn.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        self.match_btn.setEnabled(True)
         self.rename_btn.setEnabled(matched > 0)
         self._log(f"\u2713  Matched {matched}/{total} files.")
+        self._update_stats()
 
     # ── Subtitles ─────────────────────────────────────────────────
     def fetch_subtitles(self):
@@ -687,17 +1016,25 @@ class MediaRenamerApp(QMainWindow):
         if not self.files or not any(self.matches):
             QMessageBox.warning(self,"Nothing to Rename","Please match files first."); return
         matched = sum(1 for m in self.matches if m)
-        if QMessageBox.question(self,"Confirm Rename",
-            f"Rename {matched} matched file(s)?\nThis operation can be undone.",
-            QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
-            return
+        dry_run = self.dry_run_check.isChecked()
+        copy_mode = self.copy_radio.isChecked()
+
+        mode_str = "DRY RUN (no files will be changed)" if dry_run else ("Copy" if copy_mode else "Move/rename")
+        confirm = QMessageBox.question(self,"Confirm Rename",
+            f"Mode: {mode_str}\n\nProcess {matched} matched file(s)?",
+            QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No)
+        if confirm != QMessageBox.StandardButton.Yes: return
+
         self.progress_bar.setVisible(True); self.progress_bar.setValue(0)
         self.rename_btn.setEnabled(False); self.match_btn.setEnabled(False)
-        self.worker = RenameWorker(self.files, self.matches,
+        self.worker = RenameWorker(
+            self.files, self.matches,
             self.output_dir_input.text().strip() or None,
             self.naming_scheme_input.text(),
             download_artwork=self.download_artwork_check.isChecked(),
-            write_metadata=self.write_metadata_check.isChecked())
+            write_metadata=self.write_metadata_check.isChecked(),
+            dry_run=dry_run,
+            copy_mode=copy_mode)
         self.worker.progress.connect(self.progress_bar.setValue)
         self.worker.status.connect(self._log)
         self.worker.operation_complete.connect(self._on_op_complete)
@@ -708,20 +1045,24 @@ class MediaRenamerApp(QMainWindow):
         self.history.add_operation(orig, new, mi); self._update_undo_redo()
 
     def _rename_finished(self, ok, msg):
-        self.progress_bar.setVisible(False); self.rename_btn.setEnabled(True); self.match_btn.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        self.rename_btn.setEnabled(True); self.match_btn.setEnabled(True)
         self._log(("\u2713  " if ok else "\u2717  ") + msg); self._update_undo_redo()
         if not ok: QMessageBox.critical(self,"Rename Error",msg)
 
     # ── Undo / Redo ───────────────────────────────────────────────
     def _update_undo_redo(self):
-        self.undo_btn.setEnabled(self.history.can_undo()); self.redo_btn.setEnabled(self.history.can_redo())
+        self.undo_btn.setEnabled(self.history.can_undo())
+        self.redo_btn.setEnabled(self.history.can_redo())
 
     def undo_rename(self):
         op = self.history.undo()
         if not op: return
         try:
             src,dst = op['new_path'],op['original_path']
-            if os.path.exists(src): shutil.move(src,dst); self._log(f"\u21a9  Undone: {os.path.basename(src)}"); self._update_undo_redo()
+            if os.path.exists(src):
+                shutil.move(src,dst)
+                self._log(f"\u21a9  Undone: {os.path.basename(src)}"); self._update_undo_redo()
             else: QMessageBox.warning(self,"Undo Failed",f"File not found:\n{src}")
         except Exception as e: QMessageBox.critical(self,"Error",f"Undo failed: {e}")
 
@@ -731,7 +1072,8 @@ class MediaRenamerApp(QMainWindow):
         try:
             src,dst = op['original_path'],op['new_path']
             if os.path.exists(src):
-                os.makedirs(os.path.dirname(dst),exist_ok=True); shutil.move(src,dst)
+                os.makedirs(os.path.dirname(dst),exist_ok=True)
+                shutil.move(src,dst)
                 self._log(f"\u21aa  Redone: {os.path.basename(dst)}"); self._update_undo_redo()
             else: QMessageBox.warning(self,"Redo Failed",f"Source no longer exists:\n{src}")
         except Exception as e: QMessageBox.critical(self,"Error",f"Redo failed: {e}")
@@ -754,28 +1096,27 @@ class MediaRenamerApp(QMainWindow):
         self.status_text.append(msg)
         self.status_text.verticalScrollBar().setValue(self.status_text.verticalScrollBar().maximum())
 
+
 # ── Entry ─────────────────────────────────────────────────────────────────────
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("MediaRenamer")
     app.setStyle("Fusion")
-
     pal = QPalette()
-    pal.setColor(QPalette.ColorRole.Window,        QColor(C_BG))
-    pal.setColor(QPalette.ColorRole.WindowText,    QColor(C_TEXT))
-    pal.setColor(QPalette.ColorRole.Base,          QColor(C_SURFACE))
-    pal.setColor(QPalette.ColorRole.AlternateBase, QColor(C_PANEL))
-    pal.setColor(QPalette.ColorRole.Text,          QColor(C_TEXT))
-    pal.setColor(QPalette.ColorRole.Button,        QColor(C_PANEL))
-    pal.setColor(QPalette.ColorRole.ButtonText,    QColor(C_TEXT))
-    pal.setColor(QPalette.ColorRole.Highlight,     QColor(C_AMBER_DIM))
-    pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#000"))
-    pal.setColor(QPalette.ColorRole.ToolTipBase,   QColor(C_PANEL))
-    pal.setColor(QPalette.ColorRole.ToolTipText,   QColor(C_TEXT))
+    pal.setColor(QPalette.ColorRole.Window,           QColor(C_BG))
+    pal.setColor(QPalette.ColorRole.WindowText,       QColor(C_TEXT))
+    pal.setColor(QPalette.ColorRole.Base,             QColor(C_SURFACE))
+    pal.setColor(QPalette.ColorRole.AlternateBase,    QColor(C_PANEL))
+    pal.setColor(QPalette.ColorRole.Text,             QColor(C_TEXT))
+    pal.setColor(QPalette.ColorRole.Button,           QColor(C_PANEL))
+    pal.setColor(QPalette.ColorRole.ButtonText,       QColor(C_TEXT))
+    pal.setColor(QPalette.ColorRole.Highlight,        QColor(C_AMBER_DIM))
+    pal.setColor(QPalette.ColorRole.HighlightedText,  QColor("#000"))
+    pal.setColor(QPalette.ColorRole.ToolTipBase,      QColor(C_PANEL))
+    pal.setColor(QPalette.ColorRole.ToolTipText,      QColor(C_TEXT))
     app.setPalette(pal)
     app.setStyleSheet(STYLESHEET)
-
     win = MediaRenamerApp()
     win.show()
     sys.exit(app.exec())

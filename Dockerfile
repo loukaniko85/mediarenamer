@@ -1,26 +1,36 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# MediaRenamer — Docker image with full GUI support (X11 forwarding)
-# Base: python:3.11-slim (Debian bookworm)
+# MediaRenamer — Docker image with browser-accessible GUI via noVNC
+#
+# No X11 forwarding required. Access the GUI at:
+#   http://localhost:6080
+#
+# Usage:
+#   docker build -t mediarenamer .
+#   docker run -p 6080:6080 -v ~/Media:/media mediarenamer
 # ─────────────────────────────────────────────────────────────────────────────
 FROM python:3.11-slim
 
 LABEL org.opencontainers.image.title="MediaRenamer"
-LABEL org.opencontainers.image.description="Rename movies & TV shows using TMDB — GUI via X11 forwarding"
+LABEL org.opencontainers.image.description="Media renamer with browser GUI via noVNC"
 
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ── System libraries ──────────────────────────────────────────────────────────
-# PyQt6 bundles Qt itself but still requires the host X11/XCB layer.
-# Missing any one of these causes "could not load the Qt platform plugin 'xcb'"
+# ── System packages ───────────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # ── X11 core ──────────────────────────────────────────
+    # Virtual framebuffer — provides an in-memory X11 display
+    xvfb \
+    # VNC server — exposes the Xvfb display over VNC protocol
+    x11vnc \
+    # noVNC + websockify — bridges VNC to WebSocket for browser access
+    novnc \
+    websockify \
+    # ── XCB / X11 libraries required by Qt's xcb platform plugin ──
     libx11-6 \
     libx11-xcb1 \
     libxext6 \
     libxi6 \
     libxtst6 \
-    # ── XCB — every sub-library Qt's xcb platform plugin uses ──
     libxcb1 \
     libxcb-cursor0 \
     libxcb-glx0 \
@@ -37,30 +47,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-xfixes0 \
     libxcb-xinerama0 \
     libxcb-xkb1 \
-    # ── XKB (keyboard layout) ─────────────────────────────
     libxkbcommon0 \
     libxkbcommon-x11-0 \
-    # ── GL / EGL — Qt needs this even in software-render mode
     libgl1 \
     libegl1 \
     libgles2 \
-    # ── Font rendering ────────────────────────────────────
     libfontconfig1 \
     libfreetype6 \
     fontconfig \
     fonts-dejavu-core \
     fonts-liberation \
-    # ── GLib / D-Bus — used internally by Qt ─────────────
     libglib2.0-0 \
     libdbus-1-3 \
-    # ── MediaInfo CLI (for media technical metadata) ──────
+    # ── MediaInfo for technical metadata extraction ────────────────
     mediainfo \
-    # ── Certificates (for HTTPS to TMDB / OpenSubtitles) ─
+    # ── Network / TLS ─────────────────────────────────────────────
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Rebuild font cache so Qt's font system finds the installed fonts
-RUN fc-cache -fv
+    # ── Process management ─────────────────────────────────────────
+    procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && fc-cache -fv
 
 # ── Python dependencies ───────────────────────────────────────────────────────
 WORKDIR /app
@@ -74,29 +80,32 @@ COPY main.py    ./
 COPY cli.py     ./
 COPY config.py  ./
 
+# ── Startup script ────────────────────────────────────────────────────────────
+COPY docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # ── Runtime environment ───────────────────────────────────────────────────────
-# Force Qt to use the XCB (X11) platform plugin — this is what X11 forwarding uses.
+# Xvfb will start on display :1 — the entrypoint sets DISPLAY before launching Qt
+ENV DISPLAY=:1
+ENV XVFB_SCREEN=0
+ENV XVFB_RESOLUTION=1280x800x24
+
+# Qt platform — xcb talks to the Xvfb virtual framebuffer
 ENV QT_QPA_PLATFORM=xcb
-
-# Disable MIT-SHM; it is almost never available inside a container and causes
-# a silent crash when Qt tries to use shared memory for pixmap transfers.
 ENV QT_X11_NO_MITSHM=1
-
-# Use software OpenGL so the container doesn't need a GPU or GL driver passthrough.
 ENV LIBGL_ALWAYS_SOFTWARE=1
-
-# Silence Qt accessibility warnings (no AT-SPI bus inside container)
 ENV NO_AT_BRIDGE=1
 
-# Settings / API keys are stored here; mount this directory to persist them.
-VOLUME ["/root/.mediarenamer"]
+# Optional: pass API keys via environment instead of the in-app Settings dialog
+ENV TMDB_API_KEY=""
+ENV TVDB_API_KEY=""
+ENV OPENSUBTITLES_API_KEY=""
 
-# Mount your media files here
+# ── Volumes ───────────────────────────────────────────────────────────────────
+VOLUME ["/root/.mediarenamer"]   
 VOLUME ["/media"]
 
-# ── Entrypoint ────────────────────────────────────────────────────────────────
-# Default: launch the GUI.
-# Override to use the CLI:
-#   docker run ... mediarenamer python3 cli.py --help
-ENTRYPOINT ["python3"]
-CMD ["main.py"]
+# ── noVNC web port ────────────────────────────────────────────────────────────
+EXPOSE 6080
+
+ENTRYPOINT ["/entrypoint.sh"]

@@ -1,13 +1,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# MediaRenamer — docker-compose (Linux / X11)
+# MediaRenamer — docker compose
 #
 # Quick start:
-#   xhost +local:docker          # allow container to open a window
-#   docker compose up
-#   xhost -local:docker          # revoke after you're done
-#
-# On macOS see DOCKER.md — you need XQuartz.
-# On Windows see DOCKER.md — you need VcXsrv or WSL2.
+#   docker compose up --build
+#   Open: http://localhost:6080/vnc.html
 # ─────────────────────────────────────────────────────────────────────────────
 version: "3.9"
 
@@ -16,30 +12,20 @@ services:
     build: .
     image: mediarenamer:latest
     container_name: mediarenamer
-
+    ports:
+      - "6080:6080"   # noVNC web interface — open http://localhost:6080/vnc.html
     environment:
-      # Pass the host DISPLAY through so Qt knows which X server to talk to.
-      - DISPLAY=${DISPLAY:-:0}
-      # These are read at startup and override whatever is in settings.json.
-      # Leave blank to use the in-app Settings dialog instead.
+      # API keys — set these or use the in-app Settings dialog
       - TMDB_API_KEY=${TMDB_API_KEY:-}
       - TVDB_API_KEY=${TVDB_API_KEY:-}
       - OPENSUBTITLES_API_KEY=${OPENSUBTITLES_API_KEY:-}
-
+      # Display resolution (WxHxDepth)
+      - XVFB_RESOLUTION=${XVFB_RESOLUTION:-1280x800x24}
     volumes:
-      # X11 socket — lets the container draw windows on the host desktop.
-      - /tmp/.X11-unix:/tmp/.X11-unix:ro
-      # Persist API keys and rename history between container restarts.
+      # Persist API keys and rename history
       - ${HOME}/.mediarenamer:/root/.mediarenamer
-      # Mount your media files — change the left side to wherever yours live.
+      # Your media files (change left side to your actual path)
       - ${MEDIA_DIR:-~/Media}:/media
-
-    # Required for X11 MIT-SHM and IPC (shared memory between processes).
-    ipc: host
-
-    # Keep stdin open so the app can receive signals correctly.
-    stdin_open: true
-    tty: true
-
-    # Restart policy — "no" means it only runs when you explicitly start it.
     restart: "no"
+    # Give the container access to shared memory (helps Qt rendering)
+    shm_size: "256mb"
