@@ -103,15 +103,8 @@ fi
 cp "$BUILD_DIR/dist/mediarenamer" "$APP_DIR/usr/bin/mediarenamer"
 chmod +x "$APP_DIR/usr/bin/mediarenamer"
 
-# PyInstaller bundles everything needed, but we may need Qt plugins
-# Copy Qt plugins if they exist
-if [ -d "$BUILD_DIR/dist/mediarenamer" ]; then
-    # PyInstaller creates a directory with all dependencies
-    # We need to copy the entire dist directory structure
-    echo "Note: PyInstaller should have bundled all dependencies"
-fi
-
-# Create desktop file
+# Create desktop file (this is now required by appimagetool)
+mkdir -p "$APP_DIR/usr/share/applications"
 cat > "$APP_DIR/usr/share/applications/mediarenamer.desktop" <<EOF
 [Desktop Entry]
 Name=MediaRenamer
@@ -122,8 +115,7 @@ Type=Application
 Categories=AudioVideo;Video;
 EOF
 
-# Create icon (simple placeholder - users can replace with their own)
-# For now, we'll create a simple SVG icon
+# Create icon (simple placeholder)
 mkdir -p "$APP_DIR/usr/share/icons/hicolor/scalable/apps"
 cat > "$APP_DIR/usr/share/icons/hicolor/scalable/apps/mediarenamer.svg" <<EOF
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
@@ -132,7 +124,7 @@ cat > "$APP_DIR/usr/share/icons/hicolor/scalable/apps/mediarenamer.svg" <<EOF
 </svg>
 EOF
 
-# Create AppRun script
+# Create AppRun script (this is required for proper AppImage execution)
 cat > "$APP_DIR/AppRun" <<'EOF'
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
@@ -149,7 +141,7 @@ if [ ! -f "appimagetool-x86_64.AppImage" ]; then
     chmod +x appimagetool-x86_64.AppImage
 fi
 
-# Create AppImage
+# Create AppImage with proper directory structure
 echo "Creating AppImage..."
 ARCH=x86_64 ./appimagetool-x86_64.AppImage "$APP_DIR" "${APP_NAME}-${APP_VERSION}-x86_64.AppImage"
 
