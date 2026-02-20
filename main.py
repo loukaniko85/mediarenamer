@@ -130,15 +130,17 @@ QLabel#dimmed { color: #6B7280; font-size: 12px; }
 # ── Workers ───────────────────────────────────────────────────────────────────
 
 class MatchWorker(QThread):
-    progress = pyqtSignal(int)
-    matched  = pyqtSignal(int, object, str)
-    status   = pyqtSignal(str)
-    finished = pyqtSignal(int, int)
+    progress   = pyqtSignal(int)
+    matched    = pyqtSignal(int, object, str)
+    status     = pyqtSignal(str)
+    finished   = pyqtSignal(int, int)
+    hard_error = pyqtSignal(str)  # first unrecoverable error (bad key, no network)
 
     def __init__(self, files, data_source, naming_scheme, matcher, renamer):
         super().__init__()
         self.files = files; self.data_source = data_source
         self.naming_scheme = naming_scheme; self.matcher = matcher; self.renamer = renamer
+        self._hard_error_fired = False
 
     def run(self):
         total = len(self.files); matched_count = 0
@@ -148,14 +150,18 @@ class MatchWorker(QThread):
                 if mi:
                     nn = self.renamer.generate_new_name(fp, mi, self.naming_scheme)
                     matched_count += 1
-                    self.status.emit(f"  {os.path.basename(fp)}  \u2192  {mi.get('title','?')}")
+                    self.status.emit(f"\u2713  {os.path.basename(fp)}  \u2192  {mi.get('title','?')} ({mi.get('year','')})")
                 else:
                     nn = f"[no match]  {os.path.basename(fp)}"
                     self.status.emit(f"\u2717  No match: {os.path.basename(fp)}")
                 self.matched.emit(i, mi, nn)
             except Exception as e:
-                self.status.emit(f"\u26a0  Error: {os.path.basename(fp)} \u2014 {e}")
+                err = str(e)
+                self.status.emit(f"\u26a0  {os.path.basename(fp)}: {err}")
                 self.matched.emit(i, None, f"[error]  {os.path.basename(fp)}")
+                if not self._hard_error_fired:
+                    self._hard_error_fired = True
+                    self.hard_error.emit(err)
             self.progress.emit(int((i+1)/total*100))
         self.finished.emit(matched_count, total)
 
@@ -585,15 +591,23 @@ class MediaRenamerApp(QMainWindow):
     def _open_settings(self):
         dlg = SettingsDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
+            # Reinitialise matcher so it reads the freshly-saved env var.
+            # _read_tmdb_key() in matcher.py always reads os.environ at call-time,
+            # so a new MediaMatcher() picks up the key saved by SettingsDialog._save().
             self.matcher = MediaMatcher()
-            self._log("\u2713  Settings saved \u2014 API keys active for this session.")
+            key_preview = (os.environ.get("TMDB_API_KEY","") or "")
+            if key_preview and key_preview not in ("YOUR_TMDB_API_KEY_HERE","YOUR_TMDB_API_KEY"):
+                self._log(f"\u2713  API key active: ...{key_preview[-6:]}")
+            else:
+                self._log("\u26a0  No valid API key detected after save — check Settings.")
 
     # ── Matching ──────────────────────────────────────────────────
     def match_files(self):
         if not self.files:
             QMessageBox.warning(self,"No Files","Please add media files first."); return
-        key = os.environ.get("TMDB_API_KEY","")
-        if not key or key in ("YOUR_TMDB_API_KEY_HERE","YOUR_TMDB_API_KEY"):
+        _BAD_KEYS = {"", "YOUR_TMDB_API_KEY_HERE", "YOUR_TMDB_API_KEY"}
+        key = os.environ.get("TMDB_API_KEY","").strip()
+        if key in _BAD_KEYS:
             reply = QMessageBox.warning(self,"TMDB API Key Missing",
                 "No TMDB API key found.\n\nGo to Settings \u2192 paste your key to enable matching.\nGet a free key at: https://www.themoviedb.org/settings/api\n\nOpen Settings now?",
                 QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No)
@@ -615,12 +629,42 @@ class MediaRenamerApp(QMainWindow):
         self.match_worker.status.connect(self._log)
         self.match_worker.matched.connect(self._on_match_result)
         self.match_worker.finished.connect(self._on_match_finished)
+        self.match_worker.hard_error.connect(self._on_match_hard_error)
         self.match_worker.start()
 
     def _on_match_result(self, idx, mi, nn):
         self.matches[idx] = mi
         item = self.new_names_list.item(idx); item.setText(nn)
         item.setForeground(QColor(C_TEXT if mi else (C_ERROR if "[error]" in nn else C_TEXT_DIM)))
+
+    def _on_match_hard_error(self, error_msg: str):
+        """Called when the matcher raises an unrecoverable error (bad key, no network)."""
+        self.progress_bar.setVisible(False)
+        self.match_btn.setEnabled(True)
+        # Stop the worker so we don't spam errors for every remaining file
+        if hasattr(self, 'match_worker'):
+            self.match_worker.quit()
+
+        if "401" in error_msg or "Unauthorized" in error_msg or "invalid" in error_msg.lower():
+            reply = QMessageBox.critical(
+                self, "Invalid API Key",
+                "TMDB rejected the API key (401 Unauthorized).\n\n"
+                "Please double-check your key in Settings — copy it directly\n"
+                "from https://www.themoviedb.org/settings/api\n\n"
+                "Open Settings now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self._open_settings()
+        elif "Network error" in error_msg or "Connection" in error_msg:
+            QMessageBox.critical(
+                self, "Network Error",
+                f"Cannot reach TMDB:\n{error_msg}\n\n"
+                "If running in Docker, make sure the container has internet access.\n"
+                "Try: docker run --network=host ..."
+            )
+        else:
+            QMessageBox.critical(self, "Match Error", error_msg)
 
     def _on_match_finished(self, matched, total):
         self.progress_bar.setVisible(False); self.match_btn.setEnabled(True)
