@@ -3,7 +3,8 @@
 #
 # Quick start:
 #   docker compose up --build
-#   Open: http://localhost:6080/vnc.html
+#   GUI: http://localhost:6080/vnc.html
+#   API: http://localhost:8000/docs
 # ─────────────────────────────────────────────────────────────────────────────
 version: "3.9"
 
@@ -13,19 +14,31 @@ services:
     image: mediarenamer:latest
     container_name: mediarenamer
     ports:
-      - "6080:6080"   # noVNC web interface — open http://localhost:6080/vnc.html
+      - "6080:6080"   # noVNC web GUI
+      - "8000:8000"   # FastAPI REST + Swagger UI
     environment:
-      # API keys — set these or use the in-app Settings dialog
       - TMDB_API_KEY=${TMDB_API_KEY:-}
       - TVDB_API_KEY=${TVDB_API_KEY:-}
       - OPENSUBTITLES_API_KEY=${OPENSUBTITLES_API_KEY:-}
-      # Display resolution (WxHxDepth)
-      - XVFB_RESOLUTION=${XVFB_RESOLUTION:-1280x800x24}
+      - XVFB_RESOLUTION=${XVFB_RESOLUTION:-1440x900x24}
+      - API_PORT=8000
+      - API_HOST=0.0.0.0
     volumes:
-      # Persist API keys and rename history
       - ${HOME}/.mediarenamer:/root/.mediarenamer
-      # Your media files (change left side to your actual path)
       - ${MEDIA_DIR:-~/Media}:/media
     restart: "no"
-    # Give the container access to shared memory (helps Qt rendering)
     shm_size: "256mb"
+
+  # ── API-only mode (no GUI, lighter image use) ─────────────────────────────
+  # Uncomment to run headless API only:
+  # mediarenamer-api:
+  #   build: .
+  #   image: mediarenamer:latest
+  #   command: ["api"]
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - TMDB_API_KEY=${TMDB_API_KEY:-}
+  #   volumes:
+  #     - ${HOME}/.mediarenamer:/root/.mediarenamer
+  #     - ${MEDIA_DIR:-~/Media}:/media

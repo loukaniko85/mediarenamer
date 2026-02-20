@@ -343,38 +343,46 @@ class SettingsDialog(QDialog):
         self._build(); self._load()
 
     def _build(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(20); layout.setContentsMargins(28,28,28,24)
+        from PyQt6.QtWidgets import QTabWidget
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0); outer.setSpacing(0)
 
-        header = QLabel("API Keys  &  Settings")
-        header.setStyleSheet(f"font-size: 18px; font-weight: 700; color: #E8EAF0; letter-spacing:-0.5px;")
-        layout.addWidget(header)
+        tabs = QTabWidget()
+        tabs.setStyleSheet("""
+            QTabWidget::pane { border: none; background: #161923; }
+            QTabBar::tab { background: #0A0C12; color: #6B7280; padding: 10px 22px;
+                           border: none; font-size: 12px; font-weight: 600; }
+            QTabBar::tab:selected { background: #161923; color: #F59E0B;
+                                    border-bottom: 2px solid #F59E0B; }
+            QTabBar::tab:hover:!selected { color: #E8EAF0; background: #11141D; }
+        """)
 
-        sub = QLabel("Keys are stored locally at  ~/.mediarenamer/settings.json  and are never transmitted to anyone except the respective APIs.")
-        sub.setWordWrap(True)
-        sub.setStyleSheet(f"color: #6B7280; font-size: 12px;")
+        # ── API Keys tab ──────────────────────────────────────────────────────
+        keys_widget = QWidget()
+        layout = QVBoxLayout(keys_widget)
+        layout.setSpacing(18); layout.setContentsMargins(28,24,28,20)
+
+        sub = QLabel("Keys are stored locally in  ~/.mediarenamer/settings.json  and sent only to their respective APIs.")
+        sub.setWordWrap(True); sub.setStyleSheet("color: #6B7280; font-size: 12px;")
         layout.addWidget(sub)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: #252A38;")
+        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine); sep.setStyleSheet("color: #252A38;")
         layout.addWidget(sep)
 
-        grid = QVBoxLayout(); grid.setSpacing(16)
+        grid = QVBoxLayout(); grid.setSpacing(14)
 
         def make_row(label, placeholder, link_url, link_label):
-            box = QVBoxLayout(); box.setSpacing(5)
+            box = QVBoxLayout(); box.setSpacing(4)
             top = QHBoxLayout()
             lbl = QLabel(label)
-            lbl.setStyleSheet(f"color: #9CA3AF; font-weight:600; font-size:12px; min-width:160px;")
+            lbl.setStyleSheet("color: #9CA3AF; font-weight:600; font-size:12px; min-width:160px;")
             top.addWidget(lbl)
-            field = QLineEdit()
-            field.setPlaceholderText(placeholder)
+            field = QLineEdit(); field.setPlaceholderText(placeholder)
             field.setEchoMode(QLineEdit.EchoMode.Password)
             top.addWidget(field)
             box.addLayout(top)
             hint = QLabel(f'<a href="{link_url}" style="color:#92600A; text-decoration:none; font-size:11px;">\u2197 {link_label}</a>')
-            hint.setOpenExternalLinks(True)
-            hint.setContentsMargins(164,0,0,0)
+            hint.setOpenExternalLinks(True); hint.setContentsMargins(164,0,0,0)
             box.addWidget(hint)
             container = QWidget(); container.setLayout(box)
             grid.addWidget(container)
@@ -386,27 +394,101 @@ class SettingsDialog(QDialog):
             "https://thetvdb.com/dashboard/account/apikey", "thetvdb.com")
         self.osub_field = make_row("OpenSubtitles Key", "Optional \u2014 for subtitle fetching",
             "https://www.opensubtitles.com/", "opensubtitles.com")
-
         layout.addLayout(grid)
 
         self.show_cb = QCheckBox("Show keys while editing")
-        self.show_cb.setStyleSheet(f"color: #6B7280; font-size:12px;")
+        self.show_cb.setStyleSheet("color: #6B7280; font-size:12px;")
         self.show_cb.toggled.connect(self._toggle_echo)
         layout.addWidget(self.show_cb)
 
-        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine); sep2.setStyleSheet(f"color: #252A38;")
+        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine); sep2.setStyleSheet("color: #252A38;")
         layout.addWidget(sep2)
-
-        note = QLabel("* Required for file matching. The app will prompt you if this is missing.")
-        note.setStyleSheet(f"color: #6B7280; font-size:11px;")
-        note.setWordWrap(True)
-        layout.addWidget(note)
+        note = QLabel("* Required for file matching.")
+        note.setStyleSheet("color: #6B7280; font-size:11px;"); layout.addWidget(note)
 
         btns = QHBoxLayout(); btns.addStretch()
         cancel = QPushButton("Cancel"); cancel.setObjectName("ghost"); cancel.clicked.connect(self.reject)
         save = QPushButton("Save Keys"); save.setObjectName("match"); save.clicked.connect(self._save)
         btns.addWidget(cancel); btns.addWidget(save)
         layout.addLayout(btns)
+        tabs.addTab(keys_widget, "\U0001f511  API Keys")
+
+        # ── About tab ─────────────────────────────────────────────────────────
+        about_widget = QWidget()
+        av = QVBoxLayout(about_widget)
+        av.setContentsMargins(40, 30, 40, 30); av.setSpacing(0)
+        av.addStretch(1)
+
+        logo = QLabel("\u25c6")
+        logo.setStyleSheet("color: #F59E0B; font-size: 48px; border: none;")
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        av.addWidget(logo)
+
+        app_name = QLabel("MediaRenamer")
+        app_name.setStyleSheet("color: #E8EAF0; font-size: 26px; font-weight: 800; letter-spacing: -0.5px; border: none;")
+        app_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        av.addWidget(app_name)
+
+        version_lbl = QLabel("v1.1  —  The open-source FileBot alternative")
+        version_lbl.setStyleSheet("color: #6B7280; font-size: 13px; border: none;")
+        version_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        av.addWidget(version_lbl)
+
+        av.addSpacing(28)
+        sep_about = QFrame(); sep_about.setFrameShape(QFrame.Shape.HLine)
+        sep_about.setStyleSheet("color: #252A38; margin: 0 60px;")
+        av.addWidget(sep_about)
+        av.addSpacing(24)
+
+        credit = QLabel(
+            "Built by <b style=\'color:#F59E0B;\'>loukaniko</b>"
+            " with a little help from his <b style=\'color:#6B7280;\'>LLM</b>"
+        )
+        credit.setStyleSheet("color: #9CA3AF; font-size: 14px; border: none;")
+        credit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        av.addWidget(credit)
+        av.addSpacing(14)
+
+        desc = QLabel(
+            "Rename and organise your movies, TV shows and Anime.\n"
+            "Powered by TheMovieDB, TheTVDB and AniDB."
+        )
+        desc.setStyleSheet("color: #6B7280; font-size: 12px; border: none;")
+        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        desc.setWordWrap(True)
+        av.addWidget(desc)
+        av.addSpacing(24)
+
+        features = QLabel(
+            "\u2713  Batch rename with naming scheme presets\n"
+            "\u2713  Dry-run preview before committing\n"
+            "\u2713  Copy or move — keep your originals\n"
+            "\u2713  REST API with Swagger UI\n"
+            "\u2713  Async batch jobs with webhook callbacks\n"
+            "\u2713  Checksum generation (MD5/SHA1/SHA256)\n"
+            "\u2713  Artwork download & MP4 metadata embed\n"
+            "\u2713  Subtitle fetching via OpenSubtitles\n"
+            "\u2713  Undo / redo — nothing is permanent"
+        )
+        features.setStyleSheet("color: #6B7280; font-size: 11px; line-height: 1.8; border: none;")
+        features.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        av.addWidget(features)
+        av.addSpacing(24)
+
+        api_lbl = QLabel('API docs available at  <a href="http://localhost:8000/docs" style="color:#F59E0B;">http://localhost:8000/docs</a>')
+        api_lbl.setStyleSheet("color: #6B7280; font-size: 11px; border: none;")
+        api_lbl.setOpenExternalLinks(True)
+        api_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        av.addWidget(api_lbl)
+
+        av.addStretch(2)
+        close_btn = QPushButton("Close"); close_btn.setObjectName("ghost")
+        close_btn.setFixedWidth(100); close_btn.clicked.connect(self.reject)
+        close_row = QHBoxLayout(); close_row.addStretch(); close_row.addWidget(close_btn); close_row.addStretch()
+        av.addLayout(close_row)
+        tabs.addTab(about_widget, "\u2139  About")
+
+        outer.addWidget(tabs)
 
     def _toggle_echo(self, show):
         m = QLineEdit.EchoMode.Normal if show else QLineEdit.EchoMode.Password
@@ -477,7 +559,7 @@ class MediaRenamerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("MediaRenamer")
-        self.setMinimumSize(1100, 720); self.resize(1320, 860)
+        self.setMinimumSize(960, 660); self.resize(1380, 840)
         self.files=[]; self.matches=[]
         self.matcher=MediaMatcher(); self.renamer=FileRenamer()
         self.history=RenameHistory(); self.preset_manager=PresetManager()
@@ -522,9 +604,18 @@ class MediaRenamerApp(QMainWindow):
         src_lbl.setStyleSheet(f"color:{C_TEXT_DIM}; font-size:11px; border:none;")
         h.addWidget(src_lbl)
         self.data_source_combo = QComboBox()
-        self.data_source_combo.addItems(["TheMovieDB","TheTVDB"])
-        self.data_source_combo.setFixedWidth(130)
+        self.data_source_combo.addItems(["TheMovieDB","TheTVDB","AniDB"])
+        self.data_source_combo.setFixedWidth(120)
         h.addWidget(self.data_source_combo)
+
+        lang_lbl = QLabel("Lang")
+        lang_lbl.setStyleSheet(f"color:{C_TEXT_DIM}; font-size:11px; border:none;")
+        h.addWidget(lang_lbl)
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItems(["en","fr","de","es","it","ja","ko","zh","pt","ru","nl","pl","sv","da","fi","nb"])
+        self.lang_combo.setFixedWidth(60)
+        self.lang_combo.setToolTip("Preferred language for metadata (ISO 639-1)")
+        h.addWidget(self.lang_combo)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.VLine)
         sep.setStyleSheet(f"color:{C_BORDER}; margin:10px 4px;")

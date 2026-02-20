@@ -64,6 +64,7 @@ docker run -d \
     --name "${CONTAINER}" \
     --rm \
     -p "${NOVNC_PORT}:6080" \
+    -p "${API_PORT:-8000}:8000" \
     -e TMDB_API_KEY="${TMDB_API_KEY:-}" \
     -e TVDB_API_KEY="${TVDB_API_KEY:-}" \
     -e OPENSUBTITLES_API_KEY="${OPENSUBTITLES_API_KEY:-}" \
@@ -88,6 +89,7 @@ echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━
 echo -e "${GREEN}  MediaRenamer is running!${NC}"
 echo ""
 echo -e "  Browser GUI:  ${CYAN}http://localhost:${NOVNC_PORT}/vnc.html${NC}"
+echo -e "  REST API:     ${CYAN}http://localhost:${API_PORT:-8000}/docs${NC}"
 echo -e "  Media files:  ${MEDIA_DIR} → /media inside container"
 echo ""
 echo -e "  To stop:      ${YELLOW}docker stop ${CONTAINER}${NC}"

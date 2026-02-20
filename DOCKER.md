@@ -1,184 +1,149 @@
-# Running MediaRenamer in Docker
+# Docker Setup Guide
 
-MediaRenamer is a desktop GUI app. Docker containers don't have screens, so the
-container renders the window using your **host machine's X11 display server** —
-the same approach used by many Linux GUI tools in containers.
+MediaRenamer runs entirely inside Docker. The GUI is accessible in any browser via noVNC. No X11 forwarding, no XQuartz, no VcXsrv needed.
 
----
-
-## Quick start — Linux
-
-This is the simplest case. X11 is already running.
-
-```bash
-# 1. Build the image (first run only, ~2 min)
-docker build -t mediarenamer .
-
-# 2. Allow the container to open a window on your desktop
-xhost +local:docker
-
-# 3. Launch
-./docker-run.sh
-
-# 4. (Optional) Revoke the xhost permission when you're done
-xhost -local:docker
-```
-
-Or with docker compose:
-```bash
-xhost +local:docker
-docker compose up
-xhost -local:docker
-```
+| Service | URL |
+|---------|-----|
+| Browser GUI | http://localhost:6080/vnc.html |
+| REST API + Swagger | http://localhost:8000/docs |
 
 ---
 
-## Quick start — macOS
-
-You need **XQuartz** as macOS has no built-in X11 server.
+## All platforms — one command
 
 ```bash
-# 1. Install XQuartz (once)
-brew install --cask xquartz
-# — or download from https://www.xquartz.org/
-
-# 2. Open XQuartz, then go to:
-#    XQuartz menu → Preferences → Security tab
-#    Enable "Allow connections from network clients"
-#    Quit and relaunch XQuartz.
-
-# 3. Allow local connections
-xhost +localhost
-
-# 4. Build and launch
-docker build -t mediarenamer .
-./docker-run.sh
+TMDB_API_KEY=your_key ./docker-run.sh
 ```
 
-The script auto-detects XQuartz and sets `DISPLAY` to your loopback IP.
+The script builds the image on first run, starts everything, and opens your browser automatically.
 
 ---
 
-## Quick start — Windows
-
-### Option A: WSL2 + WSLg (Windows 11 / recent Win10 — recommended)
-
-WSLg provides a built-in X11/Wayland server. Run everything from a WSL2 terminal:
+## Linux
 
 ```bash
 docker build -t mediarenamer .
-./docker-run.sh
+TMDB_API_KEY=your_key MEDIA_DIR=/mnt/nas/movies ./docker-run.sh
 ```
 
-`DISPLAY` is set automatically by WSLg — no extra steps.
+---
 
-### Option B: VcXsrv (older Windows)
-
-1. Download and install [VcXsrv](https://sourceforge.net/projects/vcxsrv/)
-2. Launch **XLaunch**, choose *Multiple windows*, display `0`
-3. On the *Extra settings* page, check **Disable access control**
-4. Finish — the X server icon appears in the system tray
-5. Find your Windows host IP (run `ipconfig` in cmd, look for your LAN IP)
-6. In WSL2 / Git Bash:
+## macOS
 
 ```bash
-export DISPLAY=<your-windows-ip>:0.0
 docker build -t mediarenamer .
-./docker-run.sh
+TMDB_API_KEY=your_key ./docker-run.sh
+# Browser opens automatically
+```
+
+No XQuartz needed — the display runs inside the container.
+
+---
+
+## Windows (WSL2 / PowerShell)
+
+```bash
+# WSL2
+docker build -t mediarenamer .
+TMDB_API_KEY=your_key ./docker-run.sh
+
+# PowerShell
+docker build -t mediarenamer .
+$env:TMDB_API_KEY="your_key"; ./docker-run.sh
 ```
 
 ---
 
-## Persisting your API key
-
-Your TMDB API key is saved inside the container at `/root/.mediarenamer/settings.json`.
-The run script and compose file both mount `~/.mediarenamer` from your host to that
-path, so the key survives across container restarts.
-
-You can also pass the key as an environment variable (useful for CI or headless runs):
+## docker compose
 
 ```bash
-TMDB_API_KEY=your_key_here ./docker-run.sh
-# or
-export TMDB_API_KEY=your_key_here
-docker compose up
+# GUI + API
+TMDB_API_KEY=your_key docker compose up --build
+
+# API only (headless, no GUI)
+TMDB_API_KEY=your_key docker compose run --rm mediarenamer api
 ```
 
 ---
 
-## Mounting your media files
+## Environment variables
 
-By default, `~/Media` on your host is mounted to `/media` inside the container.
-Override with the `MEDIA_DIR` variable:
-
-```bash
-MEDIA_DIR=/mnt/nas/movies ./docker-run.sh
-```
-
-Inside the app, browse to `/media` to find your files.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TMDB_API_KEY` | — | Required for matching. Free at themoviedb.org |
+| `TVDB_API_KEY` | — | Optional. thetvdb.com |
+| `OPENSUBTITLES_API_KEY` | — | Optional. For subtitle fetching |
+| `MEDIA_DIR` | `~/Media` | Host directory mounted at `/media` |
+| `NOVNC_PORT` | `6080` | Browser GUI port |
+| `API_PORT` | `8000` | REST API port |
+| `XVFB_RESOLUTION` | `1440x900x24` | Virtual display resolution |
 
 ---
 
-## CLI mode (no display needed)
+## Volume mounts
+
+| Host path | Container path | Purpose |
+|-----------|----------------|---------|
+| `~/.mediarenamer` | `/root/.mediarenamer` | API keys, rename history, presets |
+| `~/Media` (or `$MEDIA_DIR`) | `/media` | Your media files |
+
+Inside the app (GUI or API), browse to `/media` to find your files.
+
+---
+
+## Headless API-only mode
+
+No GUI, smaller resource footprint — ideal for NAS or server deployment:
 
 ```bash
-# Get help
-./docker-run.sh cli --help
-
-# Rename a directory of files
-./docker-run.sh cli rename /media/Downloads/ --source tmdb
+docker run -d \
+  --name mediarenamer-api \
+  -p 8000:8000 \
+  -e TMDB_API_KEY=your_key \
+  -v ~/.mediarenamer:/root/.mediarenamer \
+  -v /mnt/media:/media \
+  mediarenamer api
 ```
+
+Then automate with cron, n8n, Home Assistant, or any HTTP client. See [API.md](API.md).
 
 ---
 
 ## Troubleshooting
 
-### "could not load the Qt platform plugin 'xcb'"
-The container is missing an xcb library OR can't connect to the X server.
-Run with `QT_DEBUG_PLUGINS=1` to see which library is missing:
-
+### GUI is cut off
+Increase the virtual display size:
 ```bash
-docker run --rm \
-  -e DISPLAY=$DISPLAY \
-  -e QT_DEBUG_PLUGINS=1 \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  mediarenamer python3 -c "from PyQt6.QtWidgets import QApplication; QApplication([])"
+XVFB_RESOLUTION=1920x1080x24 ./docker-run.sh
 ```
 
-### "Authorization required, but no authorization protocol specified"
-Run `xhost +local:docker` before launching the container.
-
-### Window appears but is blank / black
-Try adding `-e LIBGL_ALWAYS_SOFTWARE=1` to force software rendering:
-
+### "no match found" for everything
+Your TMDB API key may be missing or invalid. Check via API:
 ```bash
-docker run --rm \
-  -e DISPLAY=$DISPLAY \
-  -e LIBGL_ALWAYS_SOFTWARE=1 \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  mediarenamer
+curl http://localhost:8000/api/v1/health
+```
+Or open the Settings dialog → API Keys tab.
+
+### Container exits immediately
+Check logs:
+```bash
+docker logs mediarenamer
 ```
 
-### macOS: "Can't open display"
-1. Make sure XQuartz → Preferences → Security → **Allow connections from network clients** is checked
-2. Restart XQuartz after changing that setting
-3. Re-run `xhost +localhost`
-4. Confirm `echo $DISPLAY` shows something like `localhost:0` or `/tmp/…`
-
-### Windows: window doesn't appear
-1. Make sure VcXsrv is running with **Disable access control** checked
-2. Check Windows Firewall isn't blocking port 6000 (X11)
-3. Try `DISPLAY=$(grep nameserver /etc/resolv.conf | awk '{print $2}'):0.0`
-
----
-
-## Building a specific version
-
+### API returns 500
+Check the API log inside the container:
 ```bash
-docker build --build-arg APP_VERSION=1.2.0 -t mediarenamer:1.2.0 .
+docker exec mediarenamer cat /tmp/api.log
 ```
 
-## Running without GPU (pure software rendering)
+### Port conflict
+```bash
+NOVNC_PORT=6090 API_PORT=8001 ./docker-run.sh
+```
 
-Already the default — the image sets `LIBGL_ALWAYS_SOFTWARE=1`. This means
-no GPU pass-through is needed but rendering may be slightly slower on 4K displays.
+### Rebuild cleanly
+```bash
+./docker-run.sh build
+# or
+docker build --no-cache -t mediarenamer .
+```

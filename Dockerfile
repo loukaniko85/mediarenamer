@@ -88,7 +88,7 @@ RUN chmod +x /entrypoint.sh
 # Xvfb will start on display :1 — the entrypoint sets DISPLAY before launching Qt
 ENV DISPLAY=:1
 ENV XVFB_SCREEN=0
-ENV XVFB_RESOLUTION=1280x800x24
+ENV XVFB_RESOLUTION=1440x900x24
 
 # Qt platform — xcb talks to the Xvfb virtual framebuffer
 ENV QT_QPA_PLATFORM=xcb
@@ -98,6 +98,8 @@ ENV NO_AT_BRIDGE=1
 
 # Optional: pass API keys via environment instead of the in-app Settings dialog
 ENV TMDB_API_KEY=""
+ENV API_PORT=8000
+ENV API_HOST=0.0.0.0
 ENV TVDB_API_KEY=""
 ENV OPENSUBTITLES_API_KEY=""
 
@@ -107,5 +109,6 @@ VOLUME ["/media"]
 
 # ── noVNC web port ────────────────────────────────────────────────────────────
 EXPOSE 6080
+EXPOSE 8000
 
 ENTRYPOINT ["/entrypoint.sh"]
