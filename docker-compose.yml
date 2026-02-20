@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MediaRenamer — docker-compose (Linux / X11)
+#
+# Quick start:
+#   xhost +local:docker          # allow container to open a window
+#   docker compose up
+#   xhost -local:docker          # revoke after you're done
+#
+# On macOS see DOCKER.md — you need XQuartz.
+# On Windows see DOCKER.md — you need VcXsrv or WSL2.
+# ─────────────────────────────────────────────────────────────────────────────
+version: "3.9"
+
+services:
+  mediarenamer:
+    build: .
+    image: mediarenamer:latest
+    container_name: mediarenamer
+
+    environment:
+      # Pass the host DISPLAY through so Qt knows which X server to talk to.
+      - DISPLAY=${DISPLAY:-:0}
+      # These are read at startup and override whatever is in settings.json.
+      # Leave blank to use the in-app Settings dialog instead.
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+      - TVDB_API_KEY=${TVDB_API_KEY:-}
+      - OPENSUBTITLES_API_KEY=${OPENSUBTITLES_API_KEY:-}
+
+    volumes:
+      # X11 socket — lets the container draw windows on the host desktop.
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      # Persist API keys and rename history between container restarts.
+      - ${HOME}/.mediarenamer:/root/.mediarenamer
+      # Mount your media files — change the left side to wherever yours live.
+      - ${MEDIA_DIR:-~/Media}:/media
+
+    # Required for X11 MIT-SHM and IPC (shared memory between processes).
+    ipc: host
+
+    # Keep stdin open so the app can receive signals correctly.
+    stdin_open: true
+    tty: true
+
+    # Restart policy — "no" means it only runs when you explicitly start it.
+    restart: "no"
