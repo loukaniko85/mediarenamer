@@ -1,0 +1,35 @@
+# Git and IDE
+.git
+.github
+.gitignore
+.vscode
+.idea
+*.swp
+*.swo
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv
+env
+.venv
+
+# Build artifacts
+build/
+dist/
+AppDir/
+*.AppImage
+appimagetool-*.AppImage
+run_app.sh
+
+# Docs (optional: remove if you want them in image)
+*.md
+!README.md
+
+# Local / dev
+*.local
+.DS_Store
+FileBot*.html
