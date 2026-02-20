@@ -39,8 +39,10 @@ class FileRenamer:
             # Media info placeholders
             '{vf}': match_info.get('vf', match_info.get('resolution', '')),
             '{vc}': match_info.get('vc', match_info.get('video_codec', '')),
+            # {af} = audio format (codec name), {ac} = audio channels (e.g. 5.1)
+            # This matches FileBot's naming convention.
             '{af}': match_info.get('ac', match_info.get('audio_codec', '')),
-            '{ac}': match_info.get('ac', match_info.get('audio_codec', '')),
+            '{ac}': match_info.get('channels', ''),
             '{resolution}': match_info.get('resolution', ''),
             '{video_codec}': match_info.get('video_codec', match_info.get('vc', '')),
             '{audio_codec}': match_info.get('audio_codec', match_info.get('ac', '')),

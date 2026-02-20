@@ -96,6 +96,48 @@ class RenameWorker(QThread):
             self.finished.emit(False, f"Error: {str(e)}")
 
 
+class MatchWorker(QThread):
+    """Worker thread for file-matching operations (keeps UI responsive)."""
+    progress = pyqtSignal(int)
+    matched = pyqtSignal(int, object, str)   # index, match_info, new_name
+    status = pyqtSignal(str)
+    finished = pyqtSignal(int, int)          # matched_count, total
+
+    def __init__(self, files, data_source, naming_scheme, matcher, renamer):
+        super().__init__()
+        self.files = files
+        self.data_source = data_source
+        self.naming_scheme = naming_scheme
+        self.matcher = matcher
+        self.renamer = renamer
+
+    def run(self):
+        total = len(self.files)
+        matched_count = 0
+        for i, file_path in enumerate(self.files):
+            try:
+                match_info = self.matcher.match_file(
+                    file_path, self.data_source, extract_media_info=True
+                )
+                if match_info:
+                    new_name = self.renamer.generate_new_name(
+                        file_path, match_info, self.naming_scheme
+                    )
+                    matched_count += 1
+                    self.status.emit(
+                        f"Matched: {os.path.basename(file_path)} → {match_info.get('title', 'Unknown')}"
+                    )
+                else:
+                    new_name = f"[No match] {os.path.basename(file_path)}"
+                    self.status.emit(f"No match found for: {os.path.basename(file_path)}")
+                self.matched.emit(i, match_info, new_name)
+            except Exception as e:
+                self.status.emit(f"Error matching {os.path.basename(file_path)}: {e}")
+                self.matched.emit(i, None, f"[Error] {os.path.basename(file_path)}")
+            self.progress.emit(int((i + 1) / total * 100))
+        self.finished.emit(matched_count, total)
+
+
 class MediaRenamerApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -174,8 +216,13 @@ class MediaRenamerApp(QMainWindow):
         self.preset_combo.addItems(self.preset_manager.list_presets())
         self.preset_combo.currentTextChanged.connect(self.load_preset)
         naming_layout.addWidget(self.preset_combo)
-        self.naming_scheme_input = QLineEdit("{n}.{y}.{vf}.{vc}.{ac}")
-        self.naming_scheme_input.setToolTip("Example: {n}.{y}.{vf}.{vc}.{ac} → The.Terminator.1984.1080p.AVC.DTS.mkv")
+        self.naming_scheme_input = QLineEdit("{n}.{y}.{vf}.{vc}.{af}")
+        self.naming_scheme_input.setToolTip(
+            "Placeholders: {n}=title  {y}=year  {vf}=resolution  {vc}=video codec\n"
+            "{af}=audio format  {ac}=audio channels  {s}=season  {e}=episode\n"
+            "{s00e00}=S01E01  {t}=episode title\n"
+            "Example: {n}.{y}.{vf}.{vc}.{af} → The.Terminator.1984.1080p.AVC.DTS.mkv"
+        )
         naming_layout.addWidget(self.naming_scheme_input)
         save_preset_btn = QPushButton("Save Preset")
         save_preset_btn.clicked.connect(self.save_current_preset)
@@ -305,11 +352,11 @@ class MediaRenamerApp(QMainWindow):
         if not self.files:
             QMessageBox.warning(self, "No Files", "Please add files first.")
             return
-        
+
         # Check API key
         try:
             from config import TMDB_API_KEY
-            if TMDB_API_KEY == "YOUR_TMDB_API_KEY_HERE" or not TMDB_API_KEY:
+            if not TMDB_API_KEY or TMDB_API_KEY in ("YOUR_TMDB_API_KEY_HERE", "YOUR_TMDB_API_KEY"):
                 reply = QMessageBox.warning(
                     self, "API Key Not Configured",
                     "TheMovieDB API key is not configured.\n\n"
@@ -322,43 +369,45 @@ class MediaRenamerApp(QMainWindow):
                     return
         except ImportError:
             pass
-            
+
         self.status_text.append("Matching files...")
         self.match_btn.setEnabled(False)
+        self.rename_btn.setEnabled(False)
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
-        
-        data_source = self.data_source_combo.currentText()
-        self.matches = []
-        self.new_names_list.clear()
-        
+
+        # Pre-allocate matches list so on_match_result can index into it
         total = len(self.files)
-        for i, file_path in enumerate(self.files):
-            self.progress_bar.setValue(int((i / total) * 100))
-            QApplication.processEvents()
-            
-            try:
-                match_info = self.matcher.match_file(file_path, data_source, extract_media_info=True)
-                self.matches.append(match_info)
-                
-                if match_info:
-                    new_name = self.renamer.generate_new_name(file_path, match_info, self.naming_scheme_input.text())
-                    self.new_names_list.addItem(new_name)
-                    self.status_text.append(f"Matched: {os.path.basename(file_path)} -> {match_info.get('title', 'Unknown')}")
-                else:
-                    self.new_names_list.addItem(f"[No match] {os.path.basename(file_path)}")
-                    self.status_text.append(f"No match found for: {os.path.basename(file_path)}")
-            except Exception as e:
-                self.matches.append(None)
-                self.new_names_list.addItem(f"[Error] {os.path.basename(file_path)}")
-                self.status_text.append(f"Error matching {os.path.basename(file_path)}: {str(e)}")
-        
-        self.progress_bar.setValue(100)
+        self.matches = [None] * total
+        self.new_names_list.clear()
+        # Add placeholder rows so indices stay aligned
+        for f in self.files:
+            self.new_names_list.addItem("…")
+
+        data_source = self.data_source_combo.currentText()
+        self.match_worker = MatchWorker(
+            self.files, data_source,
+            self.naming_scheme_input.text(),
+            self.matcher, self.renamer
+        )
+        self.match_worker.progress.connect(self.progress_bar.setValue)
+        self.match_worker.status.connect(lambda s: self.status_text.append(s))
+        self.match_worker.matched.connect(self._on_match_result)
+        self.match_worker.finished.connect(self._on_match_finished)
+        self.match_worker.start()
+
+    def _on_match_result(self, index: int, match_info, new_name: str):
+        """Slot called from MatchWorker for each file result."""
+        self.matches[index] = match_info
+        self.new_names_list.item(index).setText(new_name)
+
+    def _on_match_finished(self, matched_count: int, total: int):
         self.progress_bar.setVisible(False)
         self.match_btn.setEnabled(True)
-        self.rename_btn.setEnabled(True)
-        matched_count = sum(1 for m in self.matches if m)
-        self.status_text.append(f"Matching complete. Found {matched_count} matches out of {total} files.")
+        self.rename_btn.setEnabled(matched_count > 0)
+        self.status_text.append(
+            f"Matching complete. Found {matched_count} matches out of {total} files."
+        )
         
     def fetch_subtitles(self):
         if not self.files:
@@ -439,18 +488,20 @@ class MediaRenamerApp(QMainWindow):
                 QMessageBox.critical(self, "Error", f"Failed to undo: {str(e)}")
     
     def redo_rename(self):
-        """Redo last undone operation"""
+        """Redo last undone operation."""
         operation = self.history.redo()
         if operation:
             try:
                 import shutil
-                original = operation['original_path']
-                new = operation['new_path']
-                if os.path.exists(original):
-                    renamer = FileRenamer(self.naming_scheme_input.text())
-                    renamer.rename_file(original, operation.get('match_info', {}), None)
-                    self.status_text.append(f"Redone: {os.path.basename(original)} → {os.path.basename(new)}")
+                src = operation['original_path']
+                dst = operation['new_path']
+                if os.path.exists(src):
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.move(src, dst)
+                    self.status_text.append(f"Redone: {os.path.basename(src)} → {os.path.basename(dst)}")
                     self.update_undo_redo_buttons()
+                else:
+                    QMessageBox.warning(self, "Redo Failed", f"Source file no longer exists:\n{src}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to redo: {str(e)}")
     

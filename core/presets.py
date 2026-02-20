@@ -28,16 +28,16 @@ class PresetManager:
     def _load_default_presets(self):
         """Load default presets if none exist"""
         defaults = {
-            "FileBot Style": "{n}.{y}.{vf}.{vc}.{ac}",
-            "Plex Standard": "{n} ({y})/{n} ({y})",
-            "Simple": "{n} ({y})",
-            "Detailed": "{n} ({y}) [{vf}] [{vc}] [{ac}]",
-            "TV Show - Plex": "{n}/Season {s}/{n} - {s00e00} - {t}",
-            "TV Show - Simple": "{n}/S{s}/E{e}",
-            "TV Show - Detailed": "{n}/Season {s}/{n} - {s00e00} - {t} [{vf}] [{vc}]",
-            "Movie - Full Info": "{n}.{y}.{vf}.{vc}.{ac}.{channels}",
-            "Movie - Minimal": "{n} ({y})",
-            "Anime Style": "{n} - {s00e00} - {t}",
+            "FileBot Style":       "{n}.{y}.{vf}.{vc}.{af}",
+            "Plex Standard":       "{n} ({y})/{n} ({y})",
+            "Simple":              "{n} ({y})",
+            "Detailed":            "{n} ({y}) [{vf}] [{vc}] [{af}] [{ac}]",
+            "TV Show - Plex":      "{n}/Season {s}/{n} - {s00e00} - {t}",
+            "TV Show - Simple":    "{n}/S{s}/E{e}",
+            "TV Show - Detailed":  "{n}/Season {s}/{n} - {s00e00} - {t} [{vf}] [{vc}]",
+            "Movie - Full Info":   "{n}.{y}.{vf}.{vc}.{af}.{ac}",
+            "Movie - Minimal":     "{n} ({y})",
+            "Anime Style":         "{n} - {s00e00} - {t}",
         }
         
         for name, scheme in defaults.items():

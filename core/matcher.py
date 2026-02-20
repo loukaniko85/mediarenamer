@@ -57,7 +57,7 @@ class MediaMatcher:
     
     def search_movies(self, query: str, year: Optional[int] = None) -> List[Dict]:
         """Search for movies and return multiple results"""
-        if self.tmdb_api_key == "YOUR_TMDB_API_KEY" or not self.tmdb_api_key:
+        if self._is_api_key_unconfigured(self.tmdb_api_key):
             return []
         
         try:
@@ -90,7 +90,7 @@ class MediaMatcher:
     
     def search_tv_shows(self, query: str) -> List[Dict]:
         """Search for TV shows and return multiple results"""
-        if self.tmdb_api_key == "YOUR_TMDB_API_KEY" or not self.tmdb_api_key:
+        if self._is_api_key_unconfigured(self.tmdb_api_key):
             return []
         
         try:
@@ -160,9 +160,14 @@ class MediaMatcher:
         else:
             return self._match_tmdb_movie(info)
             
+    def _is_api_key_unconfigured(self, key: str) -> bool:
+        """Return True if the given key looks like a placeholder / is empty."""
+        return not key or key in ("YOUR_TMDB_API_KEY_HERE", "YOUR_TMDB_API_KEY",
+                                   "YOUR_TVDB_API_KEY_HERE", "YOUR_TVDB_API_KEY")
+
     def _match_tmdb_movie(self, info: Dict) -> Optional[Dict]:
         """Match movie with TMDB"""
-        if self.tmdb_api_key == "YOUR_TMDB_API_KEY" or not self.tmdb_api_key:
+        if self._is_api_key_unconfigured(self.tmdb_api_key):
             print("Warning: TMDB API key not configured. Please set it in config.py")
             return None
             
@@ -199,7 +204,7 @@ class MediaMatcher:
         
     def _match_tmdb_tv(self, info: Dict) -> Optional[Dict]:
         """Match TV show with TMDB"""
-        if self.tmdb_api_key == "YOUR_TMDB_API_KEY" or not self.tmdb_api_key:
+        if self._is_api_key_unconfigured(self.tmdb_api_key):
             print("Warning: TMDB API key not configured. Please set it in config.py")
             return None
             
@@ -259,7 +264,11 @@ class MediaMatcher:
         return None
         
     def _match_tvdb(self, info: Dict) -> Optional[Dict]:
-        """Match with TheTVDB (simplified - requires API key setup)"""
-        # TheTVDB requires authentication, so this is a placeholder
-        # Users would need to implement proper authentication
-        return self._match_tmdb(info)  # Fallback to TMDB
+        """Match with TheTVDB.
+        
+        Full TheTVDB v4 auth requires a subscriber PIN in addition to the API key,
+        so we fall back to TMDB for now. Set TVDB_API_KEY in config.py if you
+        implement the full auth flow.
+        """
+        print("Notice: TheTVDB integration is not fully implemented; falling back to TheMovieDB.")
+        return self._match_tmdb(info)
