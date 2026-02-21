@@ -76,6 +76,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 # ── Application source ────────────────────────────────────────────────────────
 COPY core/      ./core/
+COPY api/       ./api/
 COPY assets/    ./assets/
 COPY main.py    ./
 COPY cli.py     ./

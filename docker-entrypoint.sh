@@ -44,7 +44,7 @@ fi
 # ── API-only mode ─────────────────────────────────────────────────────────────
 if [ "$1" = "api" ]; then
     echo "[api] Starting FastAPI on ${API_HOST}:${API_PORT}..."
-    exec uvicorn api.app:app --host "${API_HOST}" --port "${API_PORT}" --app-dir /app
+    cd /app && exec uvicorn api.app:app --host "${API_HOST}" --port "${API_PORT}"
 fi
 
 # ── 1. Start Xvfb ────────────────────────────────────────────────────────────
@@ -82,14 +82,33 @@ sleep 0.5
 # ── 4. Start FastAPI ─────────────────────────────────────────────────────────
 echo "[4/5] FastAPI on ${API_HOST}:${API_PORT}..."
 cd /app
-uvicorn api.app:app \
+python3 -m uvicorn api.app:app \
     --host "${API_HOST}" \
     --port "${API_PORT}" \
-    --log-level warning \
-    &>/tmp/api.log &
+    --log-level info \
+    >/tmp/api.log 2>&1 &
 API_PID=$!
-sleep 1
-echo "      API ready — http://0.0.0.0:${API_PORT}/docs"
+
+# Wait up to 10s for the API to come up
+API_READY=0
+for i in $(seq 1 20); do
+    sleep 0.5
+    if kill -0 "$API_PID" 2>/dev/null && grep -q "Application startup complete\|Uvicorn running" /tmp/api.log 2>/dev/null; then
+        API_READY=1
+        break
+    fi
+    # If process died, bail early
+    if ! kill -0 "$API_PID" 2>/dev/null; then
+        echo "  ✗ FastAPI failed to start. Log:"
+        cat /tmp/api.log
+        break
+    fi
+done
+if [ "$API_READY" = "1" ]; then
+    echo "      ✓ API ready — http://0.0.0.0:${API_PORT}/docs"
+else
+    echo "  ⚠ API may not be ready yet. Check /tmp/api.log if needed."
+fi
 
 # ── 5. Launch GUI (maximised to fill virtual display) ────────────────────────
 echo "[5/5] Launching GUI (${WIN_W}x${WIN_H} maximised)..."

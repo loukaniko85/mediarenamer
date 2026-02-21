@@ -1110,6 +1110,7 @@ class MediaRenamerApp(QMainWindow):
         self.preset_combo.setFixedWidth(160)
         self.preset_combo.currentTextChanged.connect(self.load_preset)
         self.naming_scheme_input = QLineEdit("{n}.{y}.{vf}.{vc}.{af}")
+        self.naming_scheme_input.textChanged.connect(self._refresh_preview)
         self.naming_scheme_input.setToolTip(
             "{n} title  \u00b7  {y} year  \u00b7  {vf} resolution  \u00b7  {vc} video codec\n"
             "{af} audio format  \u00b7  {ac} audio channels\n"
@@ -1572,7 +1573,29 @@ class MediaRenamerApp(QMainWindow):
     # ── Presets ───────────────────────────────────────────────────
     def load_preset(self, name):
         s = self.preset_manager.get_preset(name)
-        if s: self.naming_scheme_input.setText(s)
+        if s:
+            # Block signals to avoid double-refresh; setText triggers textChanged
+            self.naming_scheme_input.blockSignals(True)
+            self.naming_scheme_input.setText(s)
+            self.naming_scheme_input.blockSignals(False)
+            self._refresh_preview()
+
+    def _refresh_preview(self):
+        """Re-render the RENAMED PREVIEW list using cached match data + current scheme."""
+        if not self.files or not hasattr(self, 'matches') or not self.matches:
+            return
+        scheme = self.naming_scheme_input.text().strip() or "{n} ({y})"
+        for idx, (fp, mi) in enumerate(zip(self.files, self.matches)):
+            item = self.new_names_list.item(idx)
+            if item is None:
+                continue
+            if mi:
+                try:
+                    nn = self.renamer.generate_new_name(fp, mi, scheme)
+                    item.setText(nn)
+                    item.setForeground(QColor(C_TEXT))
+                except Exception:
+                    pass  # keep existing text on error
 
     def save_current_preset(self):
         scheme = self.naming_scheme_input.text().strip()
