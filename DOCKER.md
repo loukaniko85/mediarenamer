@@ -5,7 +5,7 @@ MediaRenamer runs entirely inside Docker. The GUI is accessible in any browser v
 | Service | URL |
 |---------|-----|
 | Browser GUI | http://localhost:6080/vnc.html |
-| REST API + Swagger | http://localhost:8000/docs |
+| REST API + Swagger | http://localhost:8060/docs |
 
 ---
 
@@ -75,8 +75,39 @@ TMDB_API_KEY=your_key docker compose run --rm mediarenamer api
 | `OPENSUBTITLES_API_KEY` | — | Optional. For subtitle fetching |
 | `MEDIA_DIR` | `~/Media` | Host directory mounted at `/media` |
 | `NOVNC_PORT` | `6080` | Browser GUI port |
-| `API_PORT` | `8000` | REST API port |
-| `XVFB_RESOLUTION` | `1440x900x24` | Virtual display resolution |
+| `API_PORT` | `8060` | REST API port |
+| `XVFB_RESOLUTION` | `1440x900x24` | Virtual display resolution (see below) |
+
+
+---
+
+## Changing the resolution (fixing black bars)
+
+The black bars around the GUI in noVNC come from a mismatch between the virtual display and your browser window. Fix it by setting `XVFB_RESOLUTION` to match your screen:
+
+```bash
+# 1080p widescreen
+XVFB_RESOLUTION=1920x1080x24 ./docker-run.sh
+
+# 1440p
+XVFB_RESOLUTION=2560x1440x24 ./docker-run.sh
+
+# 1366x768 laptop
+XVFB_RESOLUTION=1366x768x24 ./docker-run.sh
+
+# docker compose — add to .env file or pass inline
+XVFB_RESOLUTION=1920x1080x24 docker compose up
+```
+
+Then open noVNC with the `resize=scale` parameter to fill your browser window:
+
+```
+http://localhost:6080/vnc.html?resize=scale&autoconnect=1
+```
+
+The `docker-run.sh` script prints this URL automatically. Bookmark it.
+
+> **Tip**: For the best experience, open noVNC in full-screen (F11 in most browsers) and let `resize=scale` handle the rest. The GUI will fill the entire viewport with no black bars.
 
 ---
 
@@ -98,7 +129,7 @@ No GUI, smaller resource footprint — ideal for NAS or server deployment:
 ```bash
 docker run -d \
   --name mediarenamer-api \
-  -p 8000:8000 \
+  -p 8060:8060 \
   -e TMDB_API_KEY=your_key \
   -v ~/.mediarenamer:/root/.mediarenamer \
   -v /mnt/media:/media \
@@ -120,7 +151,7 @@ XVFB_RESOLUTION=1920x1080x24 ./docker-run.sh
 ### "no match found" for everything
 Your TMDB API key may be missing or invalid. Check via API:
 ```bash
-curl http://localhost:8000/api/v1/health
+curl http://localhost:8060/api/v1/health
 ```
 Or open the Settings dialog → API Keys tab.
 

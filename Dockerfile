@@ -76,6 +76,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 # ── Application source ────────────────────────────────────────────────────────
 COPY core/      ./core/
+COPY assets/    ./assets/
 COPY main.py    ./
 COPY cli.py     ./
 COPY config.py  ./
@@ -98,8 +99,9 @@ ENV NO_AT_BRIDGE=1
 
 # Optional: pass API keys via environment instead of the in-app Settings dialog
 ENV TMDB_API_KEY=""
-ENV API_PORT=8000
+ENV API_PORT=8060
 ENV API_HOST=0.0.0.0
+ENV RUNNING_IN_DOCKER=1
 ENV TVDB_API_KEY=""
 ENV OPENSUBTITLES_API_KEY=""
 
@@ -109,6 +111,6 @@ VOLUME ["/media"]
 
 # ── noVNC web port ────────────────────────────────────────────────────────────
 EXPOSE 6080
-EXPOSE 8000
+EXPOSE 8060
 
 ENTRYPOINT ["/entrypoint.sh"]

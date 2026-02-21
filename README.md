@@ -34,7 +34,7 @@ It comes with a **browser-based GUI** (via Docker + noVNC) and a full **REST API
 - Full undo/redo with persistent history
 
 ### Batch & automation
-- **REST API** with Swagger UI at `http://localhost:8000/docs`
+- **REST API** with Swagger UI at `http://localhost:8060/docs`
 - **Async batch jobs** — submit and poll, or set a webhook callback URL
 - **API-only headless mode** — no GUI needed for NAS/server deployment
 - CLI interface: `python3 cli.py --help`
@@ -62,7 +62,7 @@ TMDB_API_KEY=your_key MEDIA_DIR=~/Movies ./docker-run.sh
 open http://localhost:6080/vnc.html
 
 # API docs
-open http://localhost:8000/docs
+open http://localhost:8060/docs
 ```
 
 Get a free TMDB API key at https://www.themoviedb.org/settings/api
@@ -88,20 +88,20 @@ python3 cli.py --help    # CLI
 
 ```bash
 # Health
-curl http://localhost:8000/api/v1/health
+curl http://localhost:8060/api/v1/health
 
 # Dry-run preview
-curl -X POST http://localhost:8000/api/v1/media/rename \
+curl -X POST http://localhost:8060/api/v1/media/rename \
   -H "Content-Type: application/json" \
   -d '{"files":["/media/Downloads/Movie.2024.mkv"],"dry_run":true}'
 
 # Async batch job
-curl -X POST http://localhost:8000/api/v1/jobs \
+curl -X POST http://localhost:8060/api/v1/jobs \
   -H "Content-Type: application/json" \
   -d '{"files":["/media/Downloads/"],"output_dir":"/media/Movies","operation":"move"}'
 ```
 
-Full docs at [API.md](API.md) or `http://localhost:8000/docs`.
+Full docs at [API.md](API.md) or `http://localhost:8060/docs`.
 
 ---
 

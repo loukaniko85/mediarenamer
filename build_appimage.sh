@@ -1,183 +1,137 @@
 #!/bin/bash
-# Build script for creating AppImage
-
+# ─────────────────────────────────────────────────────────────────────────────
+# MediaRenamer AppImage builder
+#
+# Usage:
+#   ./build_appimage.sh [--arch aarch64]
+#
+# Requirements:
+#   apt install appimagetool libfuse2 python3 python3-pip
+# ─────────────────────────────────────────────────────────────────────────────
 set -e
 
 APP_NAME="MediaRenamer"
-APP_VERSION="1.0.0"
-APP_DIR="AppDir"
-BUILD_DIR="build"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_ID="net.mediarenamer.app"
+APP_VERSION="1.1"
+ARCH="${1:-x86_64}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "Building $APP_NAME AppImage..."
+echo "═══════════════════════════════════════════════════════════"
+echo "  Building $APP_NAME $APP_VERSION AppImage ($ARCH)"
+echo "═══════════════════════════════════════════════════════════"
 
-# Clean previous builds
-rm -rf "$APP_DIR" "$BUILD_DIR"
-mkdir -p "$APP_DIR" "$BUILD_DIR"
+# ── 1. Workspace ──────────────────────────────────────────────────────────────
+APP_DIR="$(mktemp -d)/${APP_NAME}.AppDir"
+mkdir -p "${APP_DIR}/usr/bin"
+mkdir -p "${APP_DIR}/usr/lib/python3"
+mkdir -p "${APP_DIR}/usr/share/applications"
+mkdir -p "${APP_DIR}/usr/share/icons/hicolor/16x16/apps"
+mkdir -p "${APP_DIR}/usr/share/icons/hicolor/24x24/apps"
+mkdir -p "${APP_DIR}/usr/share/icons/hicolor/32x32/apps"
+mkdir -p "${APP_DIR}/usr/share/icons/hicolor/48x48/apps"
+mkdir -p "${APP_DIR}/usr/share/icons/hicolor/64x64/apps"
+mkdir -p "${APP_DIR}/usr/share/icons/hicolor/128x128/apps"
+mkdir -p "${APP_DIR}/usr/share/icons/hicolor/256x256/apps"
 
-# Create AppDir structure
-mkdir -p "$APP_DIR/usr/bin"
-mkdir -p "$APP_DIR/usr/share/applications"
-mkdir -p "$APP_DIR/usr/share/icons/hicolor/scalable/apps"
-mkdir -p "$APP_DIR/usr/lib"
+# ── 2. Copy app sources ───────────────────────────────────────────────────────
+echo "[1/6] Copying application sources..."
+rsync -a --exclude='*.pyc' --exclude='__pycache__' \
+    --exclude='.git' --exclude='*.AppDir' \
+    --exclude='build_appimage*.sh' \
+    "${SCRIPT_DIR}/" "${APP_DIR}/usr/lib/mediarenamer/"
 
-# Install Python dependencies in a virtual environment
-echo "Setting up Python environment..."
-python3 -m venv "$BUILD_DIR/venv"
-source "$BUILD_DIR/venv/bin/activate"
-pip install --upgrade pip
-pip install -r "$SCRIPT_DIR/requirements.txt"
-pip install pyinstaller
+# ── 3. Install Python dependencies ───────────────────────────────────────────
+echo "[2/6] Installing Python dependencies into AppDir..."
+pip3 install --target="${APP_DIR}/usr/lib/python3" \
+    PyQt6 requests pymediainfo mutagen \
+    --quiet 2>&1 | tail -3
 
-# -----------------------------------------------------------------------
-# Write the complete PyInstaller spec file.
-# IMPORTANT: pyz and exe sections MUST be inside a single heredoc.
-# Using a non-expanded delimiter (SPECEOF) to prevent shell variable
-# expansion inside the spec's Python code.
-# -----------------------------------------------------------------------
-cat > "$BUILD_DIR/app.spec" << 'SPECEOF'
-# -*- mode: python ; coding: utf-8 -*-
-import sys, os
-sys.path.insert(0, os.path.abspath('..'))
-
-block_cipher = None
-
-a = Analysis(
-    ['../main.py'],
-    pathex=[os.path.abspath('..')],
-    binaries=[],
-    datas=[],
-    hiddenimports=[
-        'PyQt6.QtCore',
-        'PyQt6.QtGui',
-        'PyQt6.QtWidgets',
-        'PyQt6.sip',
-        'core.matcher',
-        'core.renamer',
-        'core.subtitle_fetcher',
-        'core.history',
-        'core.presets',
-        'core.artwork',
-        'core.metadata_writer',
-        'core.media_info',
-        'pymediainfo',
-        'requests',
-        'certifi',
-        'charset_normalizer',
-        'idna',
-        'urllib3',
-    ],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
-    noarchive=False,
-)
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
-    name='mediarenamer',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-)
-SPECEOF
-
-# Build with PyInstaller (run from build dir so ../main.py resolves correctly)
-echo "Building executable..."
-cd "$BUILD_DIR"
-pyinstaller app.spec
-cd "$SCRIPT_DIR"
-
-if [ ! -f "$BUILD_DIR/dist/mediarenamer" ]; then
-    echo "Error: PyInstaller executable not found"
-    exit 1
-fi
-
-cp "$BUILD_DIR/dist/mediarenamer" "$APP_DIR/usr/bin/mediarenamer"
-chmod +x "$APP_DIR/usr/bin/mediarenamer"
-
-# -----------------------------------------------------------------------
-# Desktop file
-# appimagetool REQUIRES the .desktop file at the AppDir root.
-# It also should live in usr/share/applications/ for system integration.
-# -----------------------------------------------------------------------
-cat > "$APP_DIR/mediarenamer.desktop" << 'DESKTOPEOF'
+# ── 4. .desktop file ─────────────────────────────────────────────────────────
+echo "[3/6] Writing .desktop entry..."
+cat > "${APP_DIR}/mediarenamer.desktop" << DESKTOPEOF
 [Desktop Entry]
 Name=MediaRenamer
-Comment=Rename movies and TV shows using online databases
-Exec=mediarenamer
+Comment=The open-source FileBot alternative — rename and organise your media
+Exec=mediarenamer %F
 Icon=mediarenamer
 Type=Application
-Categories=AudioVideo;Video;Utility;
-Keywords=rename;media;movies;tv;
+Categories=AudioVideo;Video;
+MimeType=video/mp4;video/x-matroska;video/avi;video/quicktime;video/x-msvideo;
+Keywords=rename;media;movies;tvshows;anime;organise;
+Terminal=false
+StartupWMClass=MediaRenamer
+X-AppImage-Name=MediaRenamer
+X-AppImage-Version=${APP_VERSION}
+X-AppImage-Arch=${ARCH}
 DESKTOPEOF
-cp "$APP_DIR/mediarenamer.desktop" "$APP_DIR/usr/share/applications/mediarenamer.desktop"
+cp "${APP_DIR}/mediarenamer.desktop" "${APP_DIR}/usr/share/applications/mediarenamer.desktop"
 
-# -----------------------------------------------------------------------
-# Icon
-# appimagetool also looks for an icon at AppDir root.
-# For production, replace this SVG with a proper 256x256 PNG.
-# -----------------------------------------------------------------------
-cat > "$APP_DIR/usr/share/icons/hicolor/scalable/apps/mediarenamer.svg" << 'SVGEOF'
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect width="256" height="256" rx="32" fill="#1565C0"/>
-  <rect x="40" y="80"  width="176" height="16" rx="8" fill="white" opacity="0.9"/>
-  <rect x="40" y="112" width="140" height="16" rx="8" fill="white" opacity="0.7"/>
-  <rect x="40" y="144" width="160" height="16" rx="8" fill="white" opacity="0.9"/>
-  <rect x="40" y="176" width="120" height="16" rx="8" fill="white" opacity="0.7"/>
-  <circle cx="196" cy="180" r="40" fill="#42A5F5"/>
-  <path d="M184 165 L216 180 L184 195 Z" fill="white"/>
-</svg>
-SVGEOF
-cp "$APP_DIR/usr/share/icons/hicolor/scalable/apps/mediarenamer.svg" "$APP_DIR/mediarenamer.svg"
+# ── 5. Icons ──────────────────────────────────────────────────────────────────
+echo "[4/6] Installing icons..."
+for SIZE in 16 24 32 48 64 128 256; do
+    SRC="${SCRIPT_DIR}/assets/mediarenamer_${SIZE}.png"
+    DST="${APP_DIR}/usr/share/icons/hicolor/${SIZE}x${SIZE}/apps/mediarenamer.png"
+    if [ -f "${SRC}" ]; then
+        cp "${SRC}" "${DST}"
+        echo "  ✓ ${SIZE}×${SIZE}"
+    else
+        echo "  ⚠ assets/mediarenamer_${SIZE}.png not found — skipping ${SIZE}×${SIZE}"
+    fi
+done
 
-# -----------------------------------------------------------------------
-# AppRun entry point
-# -----------------------------------------------------------------------
-cat > "$APP_DIR/AppRun" << 'APPRUNEOF'
-#!/bin/bash
-HERE="$(dirname "$(readlink -f "${0}")")"
-export PATH="${HERE}/usr/bin:${PATH}"
-export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-exec "${HERE}/usr/bin/mediarenamer" "$@"
-APPRUNEOF
-chmod +x "$APP_DIR/AppRun"
-
-# -----------------------------------------------------------------------
-# Download appimagetool if needed
-# -----------------------------------------------------------------------
-if [ ! -f "appimagetool-x86_64.AppImage" ]; then
-    echo "Downloading appimagetool..."
-    wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
-    chmod +x appimagetool-x86_64.AppImage
+# AppImage root icon (required by appimagetool — must be 256px PNG)
+if [ -f "${SCRIPT_DIR}/assets/mediarenamer_256.png" ]; then
+    cp "${SCRIPT_DIR}/assets/mediarenamer_256.png" "${APP_DIR}/mediarenamer.png"
+    echo "  ✓ Root icon (256px)"
+elif [ -f "${SCRIPT_DIR}/assets/mediarenamer.png" ]; then
+    cp "${SCRIPT_DIR}/assets/mediarenamer.png" "${APP_DIR}/mediarenamer.png"
+    echo "  ✓ Root icon (fallback)"
+else
+    echo "  ⚠ WARNING: No root icon found — AppImage icon may be missing in desktop"
 fi
 
-# -----------------------------------------------------------------------
-# Create AppImage
-# ARCH must be set explicitly; appimagetool uses it in the output filename.
-# -----------------------------------------------------------------------
-echo "Creating AppImage..."
-ARCH=x86_64 ./appimagetool-x86_64.AppImage "$APP_DIR" "${APP_NAME}-${APP_VERSION}-x86_64.AppImage"
+# ── 6. AppRun launcher ────────────────────────────────────────────────────────
+echo "[5/6] Writing AppRun launcher..."
+cat > "${APP_DIR}/AppRun" << 'APPRUNEOF'
+#!/bin/bash
+SELF="$(readlink -f "$0")"
+HERE="$(dirname "${SELF}")"
+APPDIR="${HERE}"
 
-echo ""
-echo "Done! Created: ${APP_NAME}-${APP_VERSION}-x86_64.AppImage"
+# Inject bundled Python libs
+export PYTHONPATH="${APPDIR}/usr/lib/python3:${PYTHONPATH}"
+export PATH="${APPDIR}/usr/bin:${PATH}"
+
+# Qt settings
+export QT_QPA_PLATFORMTHEME=
+export FONTCONFIG_FILE="${APPDIR}/usr/lib/fontconfig/fonts.conf"
+
+# Mark as AppImage so GUI shows correct info
+export APPIMAGE="${APPIMAGE:-appimage}"
+
+exec python3 "${APPDIR}/usr/lib/mediarenamer/main.py" "$@"
+APPRUNEOF
+chmod +x "${APP_DIR}/AppRun"
+
+# ── 7. Build AppImage ─────────────────────────────────────────────────────────
+echo "[6/6] Building AppImage with appimagetool..."
+OUTPUT="${SCRIPT_DIR}/${APP_NAME}-${APP_VERSION}-${ARCH}.AppImage"
+
+if command -v appimagetool &>/dev/null; then
+    ARCH="${ARCH}" appimagetool "${APP_DIR}" "${OUTPUT}" 2>&1
+    chmod +x "${OUTPUT}"
+    echo ""
+    echo "═══════════════════════════════════════════════════════════"
+    echo "  ✓ AppImage built: ${OUTPUT}"
+    echo "  Run: ./${APP_NAME}-${APP_VERSION}-${ARCH}.AppImage"
+    echo "═══════════════════════════════════════════════════════════"
+else
+    echo ""
+    echo "  ⚠ appimagetool not found — AppDir is ready at:"
+    echo "    ${APP_DIR}"
+    echo "  Install appimagetool from https://appimage.github.io/appimagetool/"
+    echo "  Then run: appimagetool ${APP_DIR} ${OUTPUT}"
+fi
+
+# Cleanup temp dir
+rm -rf "$(dirname "${APP_DIR}")"

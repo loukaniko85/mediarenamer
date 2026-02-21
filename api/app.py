@@ -2,12 +2,12 @@
 MediaRenamer — FastAPI backend
 ==============================
 
-Swagger UI:  http://localhost:8000/docs
-ReDoc:       http://localhost:8000/redoc
-OpenAPI JSON: http://localhost:8000/openapi.json
+Swagger UI:  http://localhost:8060/docs
+ReDoc:       http://localhost:8060/redoc
+OpenAPI JSON: http://localhost:8060/openapi.json
 
 Run (standalone):
-    uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
+    uvicorn api.app:app --host 0.0.0.0 --port 8060 --reload
 
 Run (Docker entrypoint handles this automatically alongside the GUI).
 """

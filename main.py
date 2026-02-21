@@ -4,6 +4,7 @@ MediaRenamer — dark cinema aesthetic. Amber on obsidian.
 """
 
 import sys
+import base64
 import os
 import json
 import shutil
@@ -60,6 +61,17 @@ except ImportError:
     from core.presets import PresetManager
     from core.artwork import ArtworkDownloader
     from core.metadata_writer import MetadataWriter
+
+# ── Embedded app icon ────────────────────────────────────────────────────────
+_ICON_B64 = "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"
+
+def _app_icon():
+    """Return a QIcon from the embedded base64 PNG."""
+    from PyQt6.QtGui import QPixmap, QIcon
+    from PyQt6.QtCore import QByteArray
+    data = QByteArray(base64.b64decode(_ICON_B64))
+    pm = QPixmap(); pm.loadFromData(data, "PNG")
+    return QIcon(pm)
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 C_BG        = "#0A0C12"
@@ -475,11 +487,33 @@ class SettingsDialog(QDialog):
         av.addWidget(features)
         av.addSpacing(24)
 
-        api_lbl = QLabel('API docs available at  <a href="http://localhost:8000/docs" style="color:#F59E0B;">http://localhost:8000/docs</a>')
-        api_lbl.setStyleSheet("color: #6B7280; font-size: 11px; border: none;")
-        api_lbl.setOpenExternalLinks(True)
-        api_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        av.addWidget(api_lbl)
+        # Show API link only when running inside Docker (API is only available there)
+        _in_docker  = bool(os.environ.get("RUNNING_IN_DOCKER"))
+        _in_appimage = bool(os.environ.get("APPIMAGE"))
+        if _in_docker:
+            _api_port = os.environ.get("API_PORT", "8060")
+            api_lbl = QLabel(
+                f'REST API + Swagger: <a href="http://localhost:{_api_port}/docs" style="color:#F59E0B;">localhost:{_api_port}/docs</a>'
+                f'  <span style="color:#4B5563;">(or your-host-ip:{_api_port}/docs)</span>'
+            )
+            api_lbl.setStyleSheet("color: #6B7280; font-size: 11px; border: none;")
+            api_lbl.setOpenExternalLinks(True)
+            api_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            av.addWidget(api_lbl)
+        elif _in_appimage:
+            api_lbl = QLabel("Running as AppImage — GUI only (no REST API)")
+            api_lbl.setStyleSheet("color: #4B5563; font-size: 11px; border: none; font-style: italic;")
+            api_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            av.addWidget(api_lbl)
+        else:
+            api_lbl = QLabel(
+                'Run via Docker to enable the REST API '
+                '(<a href="https://github.com/loukaniko/mediarenamer" style="color:#92600A;">docs</a>)'
+            )
+            api_lbl.setStyleSheet("color: #4B5563; font-size: 11px; border: none;")
+            api_lbl.setOpenExternalLinks(True)
+            api_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            av.addWidget(api_lbl)
 
         av.addStretch(2)
         close_btn = QPushButton("Close"); close_btn.setObjectName("ghost")
@@ -553,12 +587,361 @@ class DropZone(QWidget):
                    "mp4  \u00b7  mkv  \u00b7  avi  \u00b7  mov  \u00b7  m4v  \u00b7  wmv")
 
 
+# ── Batch Jobs Dialog ─────────────────────────────────────────────────────────
+
+class JobPollerThread(QThread):
+    """Polls the API for job list updates every 2 seconds."""
+    jobs_updated = pyqtSignal(list)
+    error        = pyqtSignal(str)
+
+    def __init__(self, api_base: str):
+        super().__init__()
+        self._api_base = api_base
+        self._running  = True
+
+    def stop(self): self._running = False
+
+    def run(self):
+        import time as _time
+        while self._running:
+            try:
+                import urllib.request, json as _json
+                with urllib.request.urlopen(f"{self._api_base}/jobs", timeout=3) as r:
+                    self.jobs_updated.emit(_json.loads(r.read()))
+            except Exception as e:
+                self.error.emit(str(e))
+            _time.sleep(2)
+
+
+class BatchJobsDialog(QDialog):
+    """
+    Batch Jobs panel — submit directory jobs to the FastAPI backend
+    and monitor their live progress without leaving the GUI.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Batch Jobs")
+        self.setMinimumSize(860, 600)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+        self._api_port = os.environ.get("API_PORT", "8060")
+        self._api_base = f"http://localhost:{self._api_port}/api/v1"
+        self._selected_job_id: str = ""
+        self._poller = None
+        self._build()
+        self._start_poller()
+
+    def closeEvent(self, e):
+        if self._poller:
+            self._poller.stop(); self._poller.quit()
+        super().closeEvent(e)
+
+    # ── Build UI ──────────────────────────────────────────────────────────────
+    def _build(self):
+        outer = QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
+
+        # ── Top bar ───────────────────────────────────────────────────────────
+        topbar = QWidget(); topbar.setStyleSheet(f"background:{C_PANEL}; border-bottom:1px solid {C_BORDER};")
+        topbar.setFixedHeight(52)
+        th = QHBoxLayout(topbar); th.setContentsMargins(18,0,18,0); th.setSpacing(10)
+        ttl = QLabel("\u25a6  Batch Jobs")
+        ttl.setStyleSheet(f"font-size:15px; font-weight:700; color:{C_TEXT};")
+        th.addWidget(ttl)
+        api_badge = QLabel(f"API: {self._api_base}")
+        api_badge.setStyleSheet(f"color:{C_TEXT_DIM}; font-size:11px;")
+        th.addWidget(api_badge)
+        th.addStretch()
+        refresh_btn = QPushButton("\u21bb Refresh"); refresh_btn.setObjectName("ghost")
+        refresh_btn.setFixedHeight(28); refresh_btn.clicked.connect(self._refresh)
+        th.addWidget(refresh_btn)
+        close_btn = QPushButton("Close"); close_btn.setObjectName("ghost")
+        close_btn.setFixedHeight(28); close_btn.clicked.connect(self.close)
+        th.addWidget(close_btn)
+        outer.addWidget(topbar)
+
+        # ── Main split ────────────────────────────────────────────────────────
+        splitter_widget = QWidget(); splitter_widget.setStyleSheet(f"background:{C_BG};")
+        sh = QHBoxLayout(splitter_widget); sh.setContentsMargins(0,0,0,0); sh.setSpacing(0)
+
+        # Left — submit form
+        left = QWidget(); left.setFixedWidth(320)
+        left.setStyleSheet(f"background:{C_SURFACE}; border-right:1px solid {C_BORDER};")
+        lv = QVBoxLayout(left); lv.setContentsMargins(16,16,16,12); lv.setSpacing(10)
+
+        submit_lbl = QLabel("SUBMIT NEW JOB"); submit_lbl.setObjectName("section_title")
+        lv.addWidget(submit_lbl)
+
+        dir_lbl = QLabel("Directory or file paths (one per line):")
+        dir_lbl.setStyleSheet(f"color:{C_TEXT_MID}; font-size:11px;")
+        lv.addWidget(dir_lbl)
+
+        self._paths_edit = QTextEdit()
+        self._paths_edit.setPlaceholderText("/media/Downloads/Movies\n/media/Downloads/TV")
+        self._paths_edit.setFixedHeight(90)
+        self._paths_edit.setStyleSheet(
+            f"background:{C_BG}; color:{C_TEXT}; border:1px solid {C_BORDER}; "
+            f"border-radius:6px; padding:6px; font-size:12px; font-family:monospace;"
+        )
+        lv.addWidget(self._paths_edit)
+
+        browse_row = QHBoxLayout(); browse_row.setSpacing(6)
+        browse_dir_btn = QPushButton("\U0001f4c2  Browse dir"); browse_dir_btn.setObjectName("ghost")
+        browse_dir_btn.setFixedHeight(28)
+        browse_dir_btn.clicked.connect(self._browse_dir)
+        browse_row.addWidget(browse_dir_btn); browse_row.addStretch()
+        lv.addLayout(browse_row)
+
+        scheme_lbl = QLabel("Naming scheme:"); scheme_lbl.setStyleSheet(f"color:{C_TEXT_MID}; font-size:11px;")
+        lv.addWidget(scheme_lbl)
+        self._scheme_edit = QLineEdit("{n} ({y})")
+        lv.addWidget(self._scheme_edit)
+
+        outdir_lbl = QLabel("Output directory (blank = rename in place):")
+        outdir_lbl.setStyleSheet(f"color:{C_TEXT_MID}; font-size:11px;")
+        lv.addWidget(outdir_lbl)
+        od_row = QHBoxLayout(); od_row.setSpacing(6)
+        self._outdir_edit = QLineEdit()
+        self._outdir_edit.setPlaceholderText("/media/Movies")
+        od_row.addWidget(self._outdir_edit)
+        browse_out_btn = QPushButton("\u2026"); browse_out_btn.setObjectName("ghost")
+        browse_out_btn.setFixedWidth(32); browse_out_btn.setFixedHeight(32)
+        browse_out_btn.clicked.connect(self._browse_out)
+        od_row.addWidget(browse_out_btn)
+        lv.addLayout(od_row)
+
+        src_lbl2 = QLabel("Data source:"); src_lbl2.setStyleSheet(f"color:{C_TEXT_MID}; font-size:11px;")
+        lv.addWidget(src_lbl2)
+        self._src_combo = QComboBox()
+        self._src_combo.addItems(["TheMovieDB","TheTVDB","AniDB"])
+        lv.addWidget(self._src_combo)
+
+        op_lbl = QLabel("Operation:"); op_lbl.setStyleSheet(f"color:{C_TEXT_MID}; font-size:11px;")
+        lv.addWidget(op_lbl)
+        op_row = QHBoxLayout(); op_row.setSpacing(12)
+        self._move_radio2 = QRadioButton("Move"); self._move_radio2.setChecked(True)
+        self._copy_radio2 = QRadioButton("Copy")
+        self._bg2 = QButtonGroup(self); self._bg2.addButton(self._move_radio2); self._bg2.addButton(self._copy_radio2)
+        op_row.addWidget(self._move_radio2); op_row.addWidget(self._copy_radio2); op_row.addStretch()
+        lv.addLayout(op_row)
+
+        opts_row = QHBoxLayout(); opts_row.setSpacing(12)
+        self._dry_run_cb2  = QCheckBox("Dry Run"); self._dry_run_cb2.setStyleSheet(f"color:{C_AMBER}; font-size:11px;")
+        self._artwork_cb2  = QCheckBox("Artwork")
+        self._meta_cb2     = QCheckBox("Metadata")
+        opts_row.addWidget(self._dry_run_cb2); opts_row.addWidget(self._artwork_cb2)
+        opts_row.addWidget(self._meta_cb2); opts_row.addStretch()
+        lv.addLayout(opts_row)
+
+        webhook_lbl = QLabel("Webhook URL (optional):")
+        webhook_lbl.setStyleSheet(f"color:{C_TEXT_MID}; font-size:11px;")
+        lv.addWidget(webhook_lbl)
+        self._webhook_edit = QLineEdit()
+        self._webhook_edit.setPlaceholderText("https://your-server/hooks/mediarenamer")
+        lv.addWidget(self._webhook_edit)
+
+        lv.addStretch()
+
+        self._submit_btn = QPushButton("\u25b6  Submit Job")
+        self._submit_btn.setObjectName("match"); self._submit_btn.setFixedHeight(40)
+        self._submit_btn.clicked.connect(self._submit_job)
+        lv.addWidget(self._submit_btn)
+        sh.addWidget(left)
+
+        # Right — job list + detail
+        right = QWidget(); right.setStyleSheet(f"background:{C_BG};")
+        rv = QVBoxLayout(right); rv.setContentsMargins(12,12,12,12); rv.setSpacing(8)
+
+        list_lbl = QLabel("JOBS"); list_lbl.setObjectName("section_title"); rv.addWidget(list_lbl)
+
+        self._job_list = QListWidget()
+        self._job_list.setFixedHeight(180)
+        self._job_list.currentRowChanged.connect(self._on_job_selected)
+        rv.addWidget(self._job_list)
+
+        # Job detail area
+        detail_lbl = QLabel("JOB DETAIL"); detail_lbl.setObjectName("section_title"); rv.addWidget(detail_lbl)
+
+        self._progress2 = QProgressBar(); self._progress2.setVisible(False); self._progress2.setFixedHeight(6)
+        rv.addWidget(self._progress2)
+
+        self._detail_lbl = QLabel("Select a job to view its log and results.")
+        self._detail_lbl.setStyleSheet(f"color:{C_TEXT_DIM}; font-size:11px; padding:4px;")
+        self._detail_lbl.setWordWrap(True)
+        rv.addWidget(self._detail_lbl)
+
+        self._job_log = QTextEdit(); self._job_log.setReadOnly(True)
+        rv.addWidget(self._job_log, stretch=1)
+
+        cancel_row = QHBoxLayout(); cancel_row.setSpacing(8)
+        self._cancel_btn = QPushButton("\u2715  Cancel Job"); self._cancel_btn.setObjectName("danger")
+        self._cancel_btn.setFixedHeight(32); self._cancel_btn.setEnabled(False)
+        self._cancel_btn.clicked.connect(self._cancel_job)
+        self._delete_btn = QPushButton("\u1f5d1  Delete Record"); self._delete_btn.setObjectName("ghost")
+        self._delete_btn.setFixedHeight(32); self._delete_btn.setEnabled(False)
+        self._delete_btn.clicked.connect(self._delete_job)
+        cancel_row.addWidget(self._cancel_btn); cancel_row.addWidget(self._delete_btn); cancel_row.addStretch()
+        rv.addLayout(cancel_row)
+        sh.addWidget(right)
+
+        outer.addWidget(splitter_widget, stretch=1)
+
+        # Status bar
+        self._statusbar = QLabel("  Ready")
+        self._statusbar.setStyleSheet(f"background:{C_PANEL}; color:{C_TEXT_DIM}; "
+                                       f"font-size:11px; border-top:1px solid {C_BORDER}; padding:4px 12px;")
+        self._statusbar.setFixedHeight(26)
+        outer.addWidget(self._statusbar)
+
+    # ── Poller ────────────────────────────────────────────────────────────────
+    def _start_poller(self):
+        self._poller = JobPollerThread(self._api_base)
+        self._poller.jobs_updated.connect(self._on_jobs_updated)
+        self._poller.error.connect(lambda e: self._statusbar.setText(f"  API error: {e}"))
+        self._poller.start()
+
+    def _refresh(self):
+        try:
+            import urllib.request, json as _json
+            with urllib.request.urlopen(f"{self._api_base}/jobs", timeout=3) as r:
+                self._on_jobs_updated(_json.loads(r.read()))
+        except Exception as e:
+            self._statusbar.setText(f"  Refresh failed: {e}")
+
+    def _on_jobs_updated(self, jobs: list):
+        prev = self._selected_job_id
+        self._job_list.clear()
+        for job in jobs:
+            status = job.get("status","?")
+            pct    = job.get("progress",{}).get("percent", 0)
+            renamed = job.get("renamed_count", 0)
+            total   = job.get("file_count", 0)
+            icons   = {"pending":"\u23f3","running":"\u27f3","completed":"\u2713","failed":"\u2717","cancelled":"\u2014"}
+            icon    = icons.get(status,"?")
+            colours = {"pending": C_TEXT_DIM, "running": C_AMBER, "completed": C_SUCCESS, "failed": C_ERROR, "cancelled": C_TEXT_DIM}
+            text    = f"{icon}  [{status.upper():12}]  {renamed}/{total} files  {pct:.0f}%  — id:{job['job_id'][:8]}…"
+            item    = QListWidgetItem(text)
+            item.setForeground(QColor(colours.get(status, C_TEXT_MID)))
+            item.setData(Qt.ItemDataRole.UserRole, job)
+            self._job_list.addItem(item)
+        # Restore selection
+        for i in range(self._job_list.count()):
+            d = self._job_list.item(i).data(Qt.ItemDataRole.UserRole)
+            if d and d.get("job_id") == prev:
+                self._job_list.setCurrentRow(i)
+                break
+        n = self._job_list.count()
+        self._statusbar.setText(f"  {n} job{'s' if n!=1 else ''} — auto-refreshing every 2s")
+
+    def _on_job_selected(self, row):
+        if row < 0: return
+        item = self._job_list.item(row)
+        if not item: return
+        job = item.data(Qt.ItemDataRole.UserRole)
+        if not job: return
+        self._selected_job_id = job.get("job_id","")
+        status  = job.get("status","?")
+        pct     = job.get("progress",{}).get("percent",0)
+        renamed = job.get("renamed_count",0)
+        errors  = job.get("error_count",0)
+        confl   = job.get("conflict_count",0)
+        total   = job.get("file_count",0)
+        self._detail_lbl.setText(
+            f"Job: {self._selected_job_id}   Status: {status.upper()}   "
+            f"{renamed}/{total} renamed   {errors} errors   {confl} conflicts"
+        )
+        running = status == "running"
+        self._progress2.setVisible(running or status == "pending")
+        self._progress2.setValue(int(pct))
+        self._cancel_btn.setEnabled(status in ("pending","running"))
+        self._delete_btn.setEnabled(status not in ("pending","running"))
+        # Fetch detail log
+        try:
+            import urllib.request, json as _json
+            with urllib.request.urlopen(f"{self._api_base}/jobs/{self._selected_job_id}", timeout=3) as r:
+                detail = _json.loads(r.read())
+            log_lines = detail.get("log", [])
+            self._job_log.setPlainText("\n".join(log_lines))
+            self._job_log.verticalScrollBar().setValue(self._job_log.verticalScrollBar().maximum())
+        except Exception as e:
+            self._job_log.setPlainText(f"Could not fetch log: {e}")
+
+    def _browse_dir(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Directory to Process")
+        if d:
+            cur = self._paths_edit.toPlainText().strip()
+            self._paths_edit.setPlainText((cur + "\n" + d).strip())
+
+    def _browse_out(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Output Directory")
+        if d: self._outdir_edit.setText(d)
+
+    def _submit_job(self):
+        raw = self._paths_edit.toPlainText().strip()
+        if not raw:
+            QMessageBox.warning(self, "No Paths", "Enter at least one directory or file path.")
+            return
+        files = [p.strip() for p in raw.splitlines() if p.strip()]
+        payload = {
+            "files":            files,
+            "naming_scheme":    self._scheme_edit.text().strip() or "{n} ({y})",
+            "output_dir":       self._outdir_edit.text().strip() or None,
+            "operation":        "copy" if self._copy_radio2.isChecked() else "move",
+            "data_source":      self._src_combo.currentText(),
+            "dry_run":          self._dry_run_cb2.isChecked(),
+            "download_artwork": self._artwork_cb2.isChecked(),
+            "write_metadata":   self._meta_cb2.isChecked(),
+            "webhook_url":      self._webhook_edit.text().strip() or None,
+        }
+        try:
+            import urllib.request, json as _json
+            data = _json.dumps(payload).encode()
+            req  = urllib.request.Request(f"{self._api_base}/jobs",
+                                          data=data, method="POST",
+                                          headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                job = _json.loads(r.read())
+            self._statusbar.setText(f"  Job submitted: {job['job_id']}")
+            QTimer.singleShot(500, self._refresh)
+        except Exception as e:
+            QMessageBox.critical(self, "Submit Failed", str(e))
+
+    def _cancel_job(self):
+        if not self._selected_job_id: return
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                f"{self._api_base}/jobs/{self._selected_job_id}/cancel",
+                method="POST", data=b""
+            )
+            urllib.request.urlopen(req, timeout=5)
+            self._statusbar.setText(f"  Cancelled: {self._selected_job_id[:8]}…")
+            QTimer.singleShot(300, self._refresh)
+        except Exception as e:
+            QMessageBox.critical(self, "Cancel Failed", str(e))
+
+    def _delete_job(self):
+        if not self._selected_job_id: return
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                f"{self._api_base}/jobs/{self._selected_job_id}",
+                method="DELETE"
+            )
+            urllib.request.urlopen(req, timeout=5)
+            self._selected_job_id = ""
+            self._job_log.clear()
+            self._detail_lbl.setText("Job deleted.")
+            QTimer.singleShot(300, self._refresh)
+        except Exception as e:
+            QMessageBox.critical(self, "Delete Failed", str(e))
+
+
 # ── Main window ───────────────────────────────────────────────────────────────
 
 class MediaRenamerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("MediaRenamer")
+        self.setWindowIcon(_app_icon())
         self.setMinimumSize(960, 660); self.resize(1380, 840)
         self.files=[]; self.matches=[]
         self.matcher=MediaMatcher(); self.renamer=FileRenamer()
@@ -625,6 +1008,18 @@ class MediaRenamerApp(QMainWindow):
         settings_btn.setObjectName("ghost"); settings_btn.setFixedHeight(32)
         settings_btn.clicked.connect(self._open_settings)
         h.addWidget(settings_btn)
+
+        # Batch jobs button — only shown when API is available (Docker)
+        if os.environ.get("RUNNING_IN_DOCKER"):
+            sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.VLine)
+            sep2.setStyleSheet(f"color:{C_BORDER}; margin:10px 4px;")
+            h.addWidget(sep2)
+            self.jobs_btn = QPushButton("\u25a6  Batch Jobs")
+            self.jobs_btn.setObjectName("ghost"); self.jobs_btn.setFixedHeight(32)
+            self.jobs_btn.setToolTip("Submit and monitor async batch rename jobs via the REST API")
+            self.jobs_btn.clicked.connect(self._open_jobs)
+            h.addWidget(self.jobs_btn)
+
         return bar
 
     # ── Body ──────────────────────────────────────────────────────
@@ -1002,6 +1397,11 @@ class MediaRenamerApp(QMainWindow):
             else:
                 self._log("\u26a0  No valid TMDB API key — check Settings.")
 
+    def _open_jobs(self):
+        """Open the Batch Jobs dialog (Docker only — requires API)."""
+        dlg = BatchJobsDialog(self)
+        dlg.exec()
+
     def _update_stats(self):
         total   = len(self.files)
         matched = sum(1 for m in self.matches if m)
@@ -1193,6 +1593,7 @@ class MediaRenamerApp(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("MediaRenamer")
+    app.setWindowIcon(_app_icon())
     app.setStyle("Fusion")
     pal = QPalette()
     pal.setColor(QPalette.ColorRole.Window,           QColor(C_BG))
@@ -1209,7 +1610,21 @@ def main():
     app.setPalette(pal)
     app.setStyleSheet(STYLESHEET)
     win = MediaRenamerApp()
-    win.show()
+
+    # ── Docker: maximise to fill virtual display exactly ──────────────────────
+    if os.environ.get("RUNNING_IN_DOCKER"):
+        geo = os.environ.get("MEDIARENAMER_GEOMETRY", "")
+        if geo and "x" in geo:
+            try:
+                w, h = (int(x) for x in geo.split("x"))
+                win.resize(w, h)
+                win.move(0, 0)
+            except ValueError:
+                pass
+        win.showMaximized()
+    else:
+        win.show()
+
     sys.exit(app.exec())
 
 if __name__ == "__main__":
