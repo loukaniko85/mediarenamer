@@ -72,8 +72,8 @@ PYQT_VER=$("${VENV_DIR}/bin/python3" -c \
     'from PyQt6.QtCore import QT_VERSION_STR; print(QT_VERSION_STR)' 2>/dev/null || echo 'unknown')
 echo "      ✓ Qt version: ${PYQT_VER}"
 
-# Smoke-test: make sure PyQt6.sip imports cleanly
-"${VENV_DIR}/bin/python3" -c "import PyQt6.sip; import PyQt6.QtWidgets" 2>/dev/null \
+# Smoke-test: use only headless-safe modules (QtWidgets needs a display)
+"${VENV_DIR}/bin/python3" -c "import PyQt6.sip; import PyQt6.QtCore; print('sip ok')" \
     && echo "      ✓ PyQt6 import smoke-test passed" \
     || { echo "ERROR: PyQt6 smoke-test failed"; exit 1; }
 
