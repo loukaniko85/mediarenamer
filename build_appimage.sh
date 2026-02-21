@@ -26,6 +26,7 @@ WORK_DIR="$(mktemp -d)"
 APP_DIR="${WORK_DIR}/${APP_NAME}.AppDir"
 
 mkdir -p "${APP_DIR}/usr/bin"
+mkdir -p "${APP_DIR}/usr/lib/mediarenamer"
 mkdir -p "${APP_DIR}/usr/share/applications"
 mkdir -p "${APP_DIR}/usr/share/icons/hicolor/16x16/apps"
 mkdir -p "${APP_DIR}/usr/share/icons/hicolor/24x24/apps"
