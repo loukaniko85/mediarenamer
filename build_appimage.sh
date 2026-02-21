@@ -2,62 +2,90 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # MediaRenamer AppImage builder
 #
-# Usage:
-#   ./build_appimage.sh [--arch aarch64]
+# Bundles a self-contained Python 3.11 interpreter (from niess/python-appimage)
+# so the AppImage runs on any Linux regardless of the system Python version.
 #
-# Requirements (auto-handled on missing):
-#   python3, python3-venv, python3-pip, wget
-#   appimagetool — downloaded automatically if not on PATH
+# Usage:  ./build_appimage.sh
+# Needs:  bash, wget, rsync
 # ─────────────────────────────────────────────────────────────────────────────
 set -e
 
 APP_NAME="MediaRenamer"
-APP_ID="net.mediarenamer.app"
 APP_VERSION="1.1"
-ARCH="${1:-x86_64}"
+ARCH="x86_64"
+PYTHON_VERSION="3.11"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "═══════════════════════════════════════════════════════════"
-echo "  Building $APP_NAME $APP_VERSION AppImage ($ARCH)"
+echo "  Building $APP_NAME $APP_VERSION AppImage"
+echo "  Python $PYTHON_VERSION bundled (self-contained)"
 echo "═══════════════════════════════════════════════════════════"
 
-# ── 1. Workspace ──────────────────────────────────────────────────────────────
 WORK_DIR="$(mktemp -d)"
-APP_DIR="${WORK_DIR}/${APP_NAME}.AppDir"
+trap 'rm -rf "${WORK_DIR}"' EXIT
 
-mkdir -p "${APP_DIR}/usr/bin"
-mkdir -p "${APP_DIR}/usr/lib/mediarenamer"
-mkdir -p "${APP_DIR}/usr/share/applications"
-mkdir -p "${APP_DIR}/usr/share/icons/hicolor/16x16/apps"
-mkdir -p "${APP_DIR}/usr/share/icons/hicolor/24x24/apps"
-mkdir -p "${APP_DIR}/usr/share/icons/hicolor/32x32/apps"
-mkdir -p "${APP_DIR}/usr/share/icons/hicolor/48x48/apps"
-mkdir -p "${APP_DIR}/usr/share/icons/hicolor/64x64/apps"
-mkdir -p "${APP_DIR}/usr/share/icons/hicolor/128x128/apps"
-mkdir -p "${APP_DIR}/usr/share/icons/hicolor/256x256/apps"
+# ── 1. Download & extract the Python AppImage ─────────────────────────────────
+# niess/python-appimage publishes pre-built, relocatable Python AppImages.
+# We extract it (no FUSE needed) and use its Python as our base.
+echo "[1/5] Fetching Python ${PYTHON_VERSION} AppImage..."
 
-# ── 2. Copy app sources ───────────────────────────────────────────────────────
-echo "[1/6] Copying application sources..."
-rsync -a --exclude='*.pyc' --exclude='__pycache__' \
-    --exclude='.git' --exclude='*.AppDir' \
-    --exclude='build_appimage*.sh' \
-    --exclude='*.AppImage' \
-    "${SCRIPT_DIR}/" "${APP_DIR}/usr/lib/mediarenamer/"
+# Query GitHub API for the latest asset URL for this Python version
+PYTHON_ASSET_URL=$(wget -qO- \
+    "https://api.github.com/repos/niess/python-appimage/releases/tags/python${PYTHON_VERSION}" \
+    | grep '"browser_download_url"' \
+    | grep "manylinux.*${ARCH}\.AppImage" \
+    | head -1 \
+    | sed 's/.*"browser_download_url": *"\([^"]*\)".*/\1/')
 
-# ── 3. Create virtualenv and install dependencies ─────────────────────────────
-# Using a virtualenv rather than pip --target so that compiled extensions
-# (PyQt6.sip, PyQt6 .so files) are installed into a proper site-packages
-# layout that Python can actually find at runtime.
-echo "[2/6] Creating virtualenv and installing dependencies..."
+if [ -z "${PYTHON_ASSET_URL}" ]; then
+    echo "  GitHub API did not return a URL — trying known fallback..."
+    # Fallback to a known stable release URL
+    PYTHON_ASSET_URL="https://github.com/niess/python-appimage/releases/download/python${PYTHON_VERSION}/python${PYTHON_VERSION}.0-cp311-cp311-manylinux_2_28_x86_64.AppImage"
+fi
 
-VENV_DIR="${APP_DIR}/usr/venv"
-python3 -m venv "${VENV_DIR}"
+echo "  URL: ${PYTHON_ASSET_URL}"
+wget -q --show-progress "${PYTHON_ASSET_URL}" -O "${WORK_DIR}/python.AppImage" || {
+    # If version-specific URL fails, try a different common format
+    echo "  Primary URL failed, trying alternate format..."
+    wget -q --show-progress \
+        "https://github.com/niess/python-appimage/releases/download/python${PYTHON_VERSION}/python${PYTHON_VERSION}-cp311-cp311-manylinux2014_x86_64.AppImage" \
+        -O "${WORK_DIR}/python.AppImage"
+}
 
-# Upgrade pip inside venv quietly
-"${VENV_DIR}/bin/pip" install --upgrade pip --quiet
+chmod +x "${WORK_DIR}/python.AppImage"
 
-# Install all runtime dependencies
-"${VENV_DIR}/bin/pip" install \
+echo "  Extracting Python AppImage (no FUSE required)..."
+cd "${WORK_DIR}"
+"${WORK_DIR}/python.AppImage" --appimage-extract >/dev/null 2>&1
+APP_DIR="${WORK_DIR}/squashfs-root"
+cd "${SCRIPT_DIR}"
+
+# Verify the extracted Python works
+BUNDLED_PYTHON="${APP_DIR}/usr/bin/python${PYTHON_VERSION}"
+if [ ! -f "${BUNDLED_PYTHON}" ]; then
+    # Try alternate path
+    BUNDLED_PYTHON=$(find "${APP_DIR}" -name "python${PYTHON_VERSION}" -type f | head -1)
+fi
+if [ ! -f "${BUNDLED_PYTHON}" ]; then
+    echo "ERROR: Cannot find python${PYTHON_VERSION} in extracted AppImage"
+    ls "${APP_DIR}/usr/bin/"
+    exit 1
+fi
+echo "  Bundled Python: ${BUNDLED_PYTHON}"
+echo "  Version: $(PYTHONHOME="${APP_DIR}/usr" "${BUNDLED_PYTHON}" --version)"
+
+# ── 2. Install dependencies into bundled Python ───────────────────────────────
+echo "[2/5] Installing dependencies into bundled Python..."
+
+# The bundled Python's pip — set PYTHONHOME so stdlib is found
+BUNDLED_PIP="${APP_DIR}/usr/bin/pip${PYTHON_VERSION}"
+if [ ! -f "${BUNDLED_PIP}" ]; then
+    BUNDLED_PIP="${APP_DIR}/usr/bin/pip3"
+fi
+
+PYTHONHOME="${APP_DIR}/usr" "${BUNDLED_PIP}" install --upgrade pip --quiet 2>&1 | tail -2
+
+PYTHONHOME="${APP_DIR}/usr" "${BUNDLED_PIP}" install \
     PyQt6 \
     requests \
     pymediainfo \
@@ -67,136 +95,109 @@ python3 -m venv "${VENV_DIR}"
     pydantic \
     --quiet
 
-echo "      ✓ virtualenv ready"
-PYQT_VER=$("${VENV_DIR}/bin/python3" -c \
-    'from PyQt6.QtCore import QT_VERSION_STR; print(QT_VERSION_STR)' 2>/dev/null || echo 'unknown')
-echo "      ✓ Qt version: ${PYQT_VER}"
+echo "  ✓ Dependencies installed"
 
-# Smoke-test: use only headless-safe modules (QtWidgets needs a display)
-"${VENV_DIR}/bin/python3" -c "import PyQt6.sip; import PyQt6.QtCore; print('sip ok')" \
-    && echo "      ✓ PyQt6 import smoke-test passed" \
-    || { echo "ERROR: PyQt6 smoke-test failed"; exit 1; }
+# Quick import check (headless-safe — QtCore only, not QtWidgets)
+PYTHONHOME="${APP_DIR}/usr" "${BUNDLED_PYTHON}" \
+    -c "import PyQt6.sip; import PyQt6.QtCore; print('  ✓ PyQt6 import OK')"
 
-# ── 4. .desktop file ─────────────────────────────────────────────────────────
-echo "[3/6] Writing .desktop entry..."
+# ── 3. Copy application files ─────────────────────────────────────────────────
+echo "[3/5] Installing application files..."
+APP_INSTALL="${APP_DIR}/usr/share/mediarenamer"
+mkdir -p "${APP_INSTALL}"
+
+rsync -a \
+    --exclude='*.pyc' --exclude='__pycache__' \
+    --exclude='.git' --exclude='*.AppImage' \
+    --exclude='build_appimage*.sh' \
+    --exclude='squashfs-root' \
+    "${SCRIPT_DIR}/" "${APP_INSTALL}/"
+
+# ── 4. Desktop entry, icons, AppRun ───────────────────────────────────────────
+echo "[4/5] Writing desktop entry, icons, AppRun..."
+
+# Desktop entry (replaces the python-appimage one)
 cat > "${APP_DIR}/mediarenamer.desktop" << DESKTOPEOF
 [Desktop Entry]
 Name=MediaRenamer
-Comment=The open-source FileBot alternative — rename and organise your media
+Comment=Rename and organise your media files
 Exec=mediarenamer %F
 Icon=mediarenamer
 Type=Application
 Categories=AudioVideo;Video;
 MimeType=video/mp4;video/x-matroska;video/avi;video/quicktime;video/x-msvideo;
-Keywords=rename;media;movies;tvshows;anime;organise;
+Keywords=rename;media;movies;tvshows;anime;
 Terminal=false
 StartupWMClass=MediaRenamer
 X-AppImage-Name=MediaRenamer
 X-AppImage-Version=${APP_VERSION}
-X-AppImage-Arch=${ARCH}
 DESKTOPEOF
+
+mkdir -p "${APP_DIR}/usr/share/applications"
 cp "${APP_DIR}/mediarenamer.desktop" "${APP_DIR}/usr/share/applications/mediarenamer.desktop"
 
-# ── 5. Icons ──────────────────────────────────────────────────────────────────
-echo "[4/6] Installing icons..."
+# Icons (all sizes)
 for SIZE in 16 24 32 48 64 128 256; do
     SRC="${SCRIPT_DIR}/assets/mediarenamer_${SIZE}.png"
-    DST="${APP_DIR}/usr/share/icons/hicolor/${SIZE}x${SIZE}/apps/mediarenamer.png"
     if [ -f "${SRC}" ]; then
-        cp "${SRC}" "${DST}"
-        echo "  ✓ ${SIZE}×${SIZE}"
-    else
-        echo "  ⚠ assets/mediarenamer_${SIZE}.png not found — skipping"
+        mkdir -p "${APP_DIR}/usr/share/icons/hicolor/${SIZE}x${SIZE}/apps"
+        cp "${SRC}" "${APP_DIR}/usr/share/icons/hicolor/${SIZE}x${SIZE}/apps/mediarenamer.png"
     fi
 done
-
-# Root icon — required by appimagetool for taskbar display
-if [ -f "${SCRIPT_DIR}/assets/mediarenamer_256.png" ]; then
+# Root icon for appimagetool
+[ -f "${SCRIPT_DIR}/assets/mediarenamer_256.png" ] && \
     cp "${SCRIPT_DIR}/assets/mediarenamer_256.png" "${APP_DIR}/mediarenamer.png"
-    echo "  ✓ Root icon (256px)"
-elif [ -f "${SCRIPT_DIR}/assets/mediarenamer.png" ]; then
-    cp "${SCRIPT_DIR}/assets/mediarenamer.png" "${APP_DIR}/mediarenamer.png"
-    echo "  ✓ Root icon (fallback)"
-else
-    echo "  ⚠ WARNING: No root icon found"
-fi
 
-# ── 6. AppRun launcher ────────────────────────────────────────────────────────
-echo "[5/6] Writing AppRun launcher..."
-cat > "${APP_DIR}/AppRun" << 'APPRUNEOF'
+# AppRun — uses the bundled Python, sets PYTHONHOME so stdlib is found
+# PYTHONHOME is the critical variable: it tells the bundled Python where its
+# own stdlib lives inside the AppImage, making it fully self-contained.
+cat > "${APP_DIR}/AppRun" << APPRUNEOF
 #!/bin/bash
-SELF="$(readlink -f "$0")"
-HERE="$(dirname "${SELF}")"
+SELF="\$(readlink -f "\$0")"
+HERE="\$(dirname "\${SELF}")"
 
-# Use the bundled virtualenv Python so compiled extensions
-# (PyQt6.sip etc.) are in a proper site-packages layout
-PYTHON="${HERE}/usr/venv/bin/python3"
+# Point bundled Python at its own stdlib inside the AppImage
+export PYTHONHOME="\${HERE}/usr"
+export PATH="\${HERE}/usr/bin:\${PATH}"
 
-# Qt plugins path — use bundled Qt6 plugins from the venv
-_PYQT6_DIR="$(ls -d "${HERE}/usr/venv/lib/python3."*/site-packages/PyQt6 2>/dev/null | head -1)"
-if [ -d "${_PYQT6_DIR}/Qt6/plugins" ]; then
-    export QT_PLUGIN_PATH="${_PYQT6_DIR}/Qt6/plugins"
-fi
-
-# Prevent Qt from complaining about missing platform theme
+# Qt plugins from the bundled PyQt6
+_PYQT6_DIR="\$(ls -d "\${HERE}/usr/lib/python${PYTHON_VERSION}/site-packages/PyQt6" 2>/dev/null | head -1)"
+[ -d "\${_PYQT6_DIR}/Qt6/plugins" ] && export QT_PLUGIN_PATH="\${_PYQT6_DIR}/Qt6/plugins"
 export QT_QPA_PLATFORMTHEME=
 
-# Mark as AppImage so the About dialog shows the right info
-export APPIMAGE="${APPIMAGE:-appimage}"
+# Mark as AppImage for the About dialog
+export APPIMAGE="\${APPIMAGE:-appimage}"
 
-exec "${PYTHON}" "${HERE}/usr/lib/mediarenamer/main.py" "$@"
+exec "\${HERE}/usr/bin/python${PYTHON_VERSION}" \
+    "\${HERE}/usr/share/mediarenamer/main.py" "\$@"
 APPRUNEOF
 chmod +x "${APP_DIR}/AppRun"
 
-# ── 7. Ensure appimagetool is available ──────────────────────────────────────
-# appimagetool is itself an AppImage. On systems without FUSE (GitHub Actions),
-# we extract it with --appimage-extract (no FUSE needed) and run AppRun directly.
-echo "[6/6] Building AppImage with appimagetool..."
+# ── 5. Build final AppImage ───────────────────────────────────────────────────
+echo "[5/5] Building AppImage..."
 OUTPUT="${SCRIPT_DIR}/${APP_NAME}-${APP_VERSION}-${ARCH}.AppImage"
 
-_APPIMAGETOOL=""
-_TOOL_DIR=""
+# Get appimagetool — extract it (no FUSE needed)
+TOOL_DIR="$(mktemp -d)"
+wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" \
+    -O "${TOOL_DIR}/appimagetool.AppImage"
+chmod +x "${TOOL_DIR}/appimagetool.AppImage"
+cd "${TOOL_DIR}"
+"${TOOL_DIR}/appimagetool.AppImage" --appimage-extract >/dev/null 2>&1
+cd "${SCRIPT_DIR}"
+APPIMAGETOOL="${TOOL_DIR}/squashfs-root/AppRun"
+[ -x "${APPIMAGETOOL}" ] || { echo "ERROR: appimagetool extraction failed"; rm -rf "${TOOL_DIR}"; exit 1; }
 
-if command -v appimagetool &>/dev/null && appimagetool --version &>/dev/null 2>&1; then
-    _APPIMAGETOOL="appimagetool"
-    echo "      Using system appimagetool"
-else
-    echo "      Downloading appimagetool..."
-    _TOOL_DIR="$(mktemp -d)"
-    wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" \
-        -O "${_TOOL_DIR}/appimagetool.AppImage"
-    chmod +x "${_TOOL_DIR}/appimagetool.AppImage"
-
-    echo "      Extracting (no FUSE required)..."
-    cd "${_TOOL_DIR}"
-    "${_TOOL_DIR}/appimagetool.AppImage" --appimage-extract >/dev/null 2>&1
-    cd "${SCRIPT_DIR}"
-
-    _APPIMAGETOOL="${_TOOL_DIR}/squashfs-root/AppRun"
-    if [ ! -x "${_APPIMAGETOOL}" ]; then
-        echo "ERROR: appimagetool extraction failed"
-        rm -rf "${_TOOL_DIR}" "${WORK_DIR}"
-        exit 1
-    fi
-    echo "      appimagetool ready"
-fi
-
-ARCH="${ARCH}" "${_APPIMAGETOOL}" "${APP_DIR}" "${OUTPUT}" 2>&1
+ARCH="${ARCH}" "${APPIMAGETOOL}" "${APP_DIR}" "${OUTPUT}" 2>&1
 BUILD_EXIT=$?
+rm -rf "${TOOL_DIR}"
 
-# Cleanup
-[ -n "${_TOOL_DIR}" ] && rm -rf "${_TOOL_DIR}"
-rm -rf "${WORK_DIR}"
-
-if [ "${BUILD_EXIT}" -ne 0 ]; then
-    echo "ERROR: appimagetool exited with code ${BUILD_EXIT}"
-    exit "${BUILD_EXIT}"
-fi
+[ "${BUILD_EXIT}" -ne 0 ] && { echo "ERROR: appimagetool failed (exit ${BUILD_EXIT})"; exit "${BUILD_EXIT}"; }
 
 chmod +x "${OUTPUT}"
 echo ""
 echo "═══════════════════════════════════════════════════════════"
-echo "  ✓ AppImage built: ${OUTPUT}"
-echo "  Size: $(du -h "${OUTPUT}" | cut -f1)"
-echo "  Run:  ./${APP_NAME}-${APP_VERSION}-${ARCH}.AppImage"
+echo "  ✓ Built: ${OUTPUT}"
+echo "  Size:  $(du -h "${OUTPUT}" | cut -f1)"
+echo "  Run:   ./${APP_NAME}-${APP_VERSION}-${ARCH}.AppImage"
 echo "═══════════════════════════════════════════════════════════"
