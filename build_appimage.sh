@@ -113,25 +113,59 @@ exec python3 "${APPDIR}/usr/lib/mediarenamer/main.py" "$@"
 APPRUNEOF
 chmod +x "${APP_DIR}/AppRun"
 
-# ── 7. Build AppImage ─────────────────────────────────────────────────────────
+# ── 7. Ensure appimagetool is available ──────────────────────────────────────
+# appimagetool is itself an AppImage. On systems without FUSE (e.g. GitHub
+# Actions), we extract it with --appimage-extract and run the inner binary.
+# If it's already on PATH we use it directly; otherwise we download + extract.
 echo "[6/6] Building AppImage with appimagetool..."
 OUTPUT="${SCRIPT_DIR}/${APP_NAME}-${APP_VERSION}-${ARCH}.AppImage"
 
-if command -v appimagetool &>/dev/null; then
-    ARCH="${ARCH}" appimagetool "${APP_DIR}" "${OUTPUT}" 2>&1
-    chmod +x "${OUTPUT}"
-    echo ""
-    echo "═══════════════════════════════════════════════════════════"
-    echo "  ✓ AppImage built: ${OUTPUT}"
-    echo "  Run: ./${APP_NAME}-${APP_VERSION}-${ARCH}.AppImage"
-    echo "═══════════════════════════════════════════════════════════"
+_APPIMAGETOOL=""
+
+# Check if a working appimagetool is already on PATH
+if command -v appimagetool &>/dev/null && appimagetool --version &>/dev/null 2>&1; then
+    _APPIMAGETOOL="appimagetool"
+    echo "      Using system appimagetool: $(appimagetool --version 2>&1 | head -1)"
 else
-    echo ""
-    echo "  ⚠ appimagetool not found — AppDir is ready at:"
-    echo "    ${APP_DIR}"
-    echo "  Install appimagetool from https://appimage.github.io/appimagetool/"
-    echo "  Then run: appimagetool ${APP_DIR} ${OUTPUT}"
+    # Download and extract — works with or without FUSE
+    echo "      appimagetool not on PATH — downloading..."
+    _TOOL_DIR="$(mktemp -d)"
+    wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" \
+        -O "${_TOOL_DIR}/appimagetool.AppImage"
+    chmod +x "${_TOOL_DIR}/appimagetool.AppImage"
+
+    echo "      Extracting (no FUSE required)..."
+    cd "${_TOOL_DIR}"
+    "${_TOOL_DIR}/appimagetool.AppImage" --appimage-extract >/dev/null 2>&1
+    cd "${SCRIPT_DIR}"
+
+    _APPIMAGETOOL="${_TOOL_DIR}/squashfs-root/AppRun"
+    if [ ! -x "${_APPIMAGETOOL}" ]; then
+        echo "ERROR: appimagetool extraction failed — ${_APPIMAGETOOL} not found"
+        ls -la "${_TOOL_DIR}/squashfs-root/" 2>/dev/null || echo "squashfs-root missing"
+        rm -rf "${_TOOL_DIR}" "$(dirname "${APP_DIR}")"
+        exit 1
+    fi
+    echo "      appimagetool ready: $("${_APPIMAGETOOL}" --version 2>&1 | head -1)"
 fi
 
-# Cleanup temp dir
+# ── Build ─────────────────────────────────────────────────────────────────────
+ARCH="${ARCH}" "${_APPIMAGETOOL}" "${APP_DIR}" "${OUTPUT}" 2>&1
+BUILD_EXIT=$?
+
+# Cleanup temp dirs
+[ -n "${_TOOL_DIR:-}" ] && rm -rf "${_TOOL_DIR}"
 rm -rf "$(dirname "${APP_DIR}")"
+
+if [ "${BUILD_EXIT}" -ne 0 ]; then
+    echo "ERROR: appimagetool exited with code ${BUILD_EXIT}"
+    exit "${BUILD_EXIT}"
+fi
+
+chmod +x "${OUTPUT}"
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "  ✓ AppImage built: ${OUTPUT}"
+echo "  Size: $(du -h "${OUTPUT}" | cut -f1)"
+echo "  Run:  ./${APP_NAME}-${APP_VERSION}-${ARCH}.AppImage"
+echo "═══════════════════════════════════════════════════════════"
